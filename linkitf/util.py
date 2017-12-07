@@ -7,13 +7,13 @@ import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import pandas as pd
 import math
-import kepcart as kc
+import lib.kepcart as kc
 import healpy as hp
 import collections
 import astropy
 from collections import defaultdict
 from collections import Counter
-import MPC_library
+from lib import MPC_library
 import scipy.spatial
 import pickle
 from operator import add
@@ -431,41 +431,7 @@ g_gdots = [(x,y) for x in gs for y in gdots]
 
 # And it should accept dt and rad ranges.
 
-### TODO: incorporate this training decision maker:
-"""
-error_rate_limit=1e-3
-training_dict={}
-for n in [-11, -14, -17, -20, -23]:
-    infilename='data/UnnObs_Training_1_line_A_%.1lf_pm15.0_r2.5.trans' % (lunation_center(n))
-    pickle_filename = infilename.rstrip('trans') + 'v2_pickle'
-    dt=15
-    with open(pickle_filename, 'rb') as handle:
-        pix_runs = pickle.load(handle)
 
-        # Should save these results in files
-        true_count_dict, mergedCounter_dict, mergedTime_dict=accessible_clusters(list(pix_runs.keys()), infilename=infilename)
-        true_count=sum(true_count_dict.values())
-        true_count
-
-        print(n)
-        for i in range(99):
-            errs=0
-            clusts=0
-            trues=0
-            for pix in list(pix_runs.keys()):
-                nclusters = pix_runs[pixels[pix]][dt][1][i]
-                nerrors = pix_runs[pixels[pix]][dt][2][i]
-                ntrue = true_count_dict[pix]
-
-                errs += nerrors
-                clusts += nclusters
-                trues += ntrue
-            if float(errs)/trues<error_rate_limit:
-                print(i, pix_runs[pixels[pix]][dt][0][i], errs, clusts, trues)
-            else:
-                training_dict[n] = pix_runs[pixels[pix]][dt][0][i], errs, clusts, trues
-                break
-"""
 
 def do_training_run(pixels, infilename, t_ref,
                     cluster_sky_function=cluster_sky_regions,
@@ -603,83 +569,7 @@ def make_histogram(mergedCounter):
     return hist_dict
 
 
-def number_clusters_plot(pix_runs,true_count):
-    for dt in np.arange(5, 30, 5):
-        pixels=list(pix_runs.keys())
-        ds = pix_runs[pixels[0]][dt][0]
-        nclusters = pix_runs[pixels[0]][dt][1]
-        nerrors = pix_runs[pixels[0]][dt][2]
-        for pix in pixels[1:]:
-            nclusters = list(map(add, nclusters, pix_runs[pix][dt][1]))
-            nerrors = list(map(add, nerrors, pix_runs[pix][dt][2]))
-        nclusters=np.array(nclusters)
 
-        plt.plot(ds, nclusters, label=dt)
-
-    plt.axhline(true_count, ls='dashed')
-    plt.xlabel('d (cluster radius)')
-    plt.ylabel('N clusters')
-    #plt.text(0.005, 400, r'$\gamma=0.4$', fontsize=15)
-    plt.legend()
-    plt.title('Number of clusters by cluster radius.')
-    plt.savefig('demo_data/nclusters_demo')
-    plt.show()
-
-
-def number_errors_plot(pix_runs):
-    for dt in np.arange(5, 30, 5):
-        pixels=list(pix_runs.keys())
-        ds = pix_runs[pixels[0]][dt][0]
-        nclusters = pix_runs[pixels[0]][dt][1]
-        nerrors = pix_runs[pixels[0]][dt][2]
-        for pix in pixels[1:]:
-            nclusters = list(map(add, nclusters, pix_runs[pix][dt][1]))
-            nerrors = list(map(add, nerrors, pix_runs[pix][dt][2]))
-        nclusters=np.array(nclusters)
-        nerrors=np.array(nerrors)
-        '''
-        if dt==50:
-            for d, nc, ne in zip(ds, nclusters, nerrors):
-                print(d, nc, ne)
-        '''
-
-
-        plt.plot(ds, nerrors, label=dt)
-
-    plt.xscale("log", nonposx='clip')
-    plt.ylim((0,3000))
-    plt.xlabel('d (cluster radius)')
-    plt.ylabel('N errors')
-    plt.text(0.0005, 1000, r'$\gamma=0.4$', fontsize=15)
-    plt.legend()
-    plt.title('Number of errors by cluster radius')
-    plt.savefig('demo_data/nerrors_demo')
-    plt.show()
-
-
-def auc_plot(pix_runs,true_count):
-    for dt in np.arange(5, 30, 5):
-        pixels=list(pix_runs.keys())
-        ds = pix_runs[pixels[0]][dt][0]
-        nclusters = pix_runs[pixels[0]][dt][1]
-        nerrors = pix_runs[pixels[0]][dt][2]
-        for pix in pixels[1:]:
-            nclusters = list(map(add, nclusters, pix_runs[pix][dt][1]))
-            nerrors = list(map(add, nerrors, pix_runs[pix][dt][2]))
-        nclusters=np.array(nclusters)
-        nerrors=np.array(nerrors)
-
-        plt.plot(nerrors/true_count, nclusters/true_count, label=dt)
-
-    plt.xlim((0, 0.02))
-    plt.ylim((0, 1))
-    plt.xlabel('Error rate')
-    plt.ylabel('Fraction complete')
-    plt.text(0.05, 0.2, r'$\gamma=0.4$', fontsize=15)
-    #plt.legend()
-    plt.title('AUC-proxy plot')
-    plt.savefig('demo_data/AUC_demo')
-    plt.show()
 
 
 gs = [0.3, 0.35, 0.4, 0.45, 0.5]
@@ -838,33 +728,25 @@ def generate_sky_region_files(infilename, nside=8, n=-11, angDeg=5.5, g=0.4, gdo
             select_positions_z(lunation_center(n), g, gdot, vec, lines, outfilename)
 
 
-def make_figure(filename):
-    plt.ioff()
-    mxs, cxs, mys, cys, dts =[], [], [], [], []
-    for line in open(filename):
-        if line.startswith('#'):
-            continue
-        desig, cx, mx, cy, my, dt = line.split()
-        mxs.append(float(mx))
-        cxs.append(float(cx))
-        mys.append(float(my))
-        cys.append(float(cy))
-        dts.append(float(dt))
+def get_original_tracklets_dict(filename='data/UnnObs_Training_1_line_A.mpc'):
+    tracklets = defaultdict(list)
+    with open(filename) as infile:
+        for i, line in enumerate(infile):
+            if not line.startswith('#'):
+                desig = line[0:12].strip()
+                tracklets[desig].append(i)
+    return tracklets
 
-    fig=plt.figure(figsize=(18, 16))
+def get_original_observation_array(filename='data/UnnObs_Training_1_line_A.txt'):
+    tracklets = defaultdict(list)
+    with open(filename) as infile:
+        data = infile.readlines()
+    return data
 
-    #norm = Normalize()
-    #norm.autoscale(colors)
-
-    colormap = cm.inferno
-
-    plt.quiver(cxs, cys, mxs, mys, dts, scale=0.3, width=0.0003)
-
-    plt.xlim(-0.2, 0.2)
-    plt.ylim(-0.2, 0.2)
-    plt.xlabel('alpha')
-    plt.ylabel('beta')
-    outfile = filename+'.pdf'
-    plt.savefig(outfile)
-    plt.close()
-    plt.ion()
+def get_observations(cluster_key, tracklets_dict, observation_array, sep='|'):
+    array=[]
+    for key in cluster_key.split(sep):
+        indices = tracklets_dict[key]
+        for idx in indices:
+            array.append(observation_array[idx].rstrip())
+    return array
