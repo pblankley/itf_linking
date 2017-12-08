@@ -148,23 +148,23 @@ def adjust_position(r, rho_target, re):
     return (rho_p, (x_p, y_p, z_p)), (rho_m, (x_m, y_m, z_m))
 
 def index_positions(n, r_func, file_stem, dt=45., nside=8):
-        """
-        Does the transformations on the data using the date of the n-th new
-        moon as the reference time.
+    """
+    Does the transformations on the data using the date of the n-th new
+    moon as the reference time.
 
-        It is reading and processing the entire *.mpc file.
+    It is reading and processing the entire *.mpc file.
 
-        This does the heliocentric tranformation for the assumed radius function,
-        r_func.
+    This does the heliocentric tranformation for the assumed radius function,
+    r_func.
 
-        It then does light-time correction.
+    It then does light-time correction.
 
-        And it appends a healpix number on each line in order to be able to quickly
-        select data from a given region of sky.
+    And it appends a healpix number on each line in order to be able to quickly
+    select data from a given region of sky.
 
-        This generates a file called *.trans, and it incorporates
-        the distance assumed in the file name.
-        """
+    This generates a file called *.trans, and it incorporates
+    the distance assumed in the file name.
+    """
     infilename = file_stem.rstrip('.mpc')+'_'+str(util.lunation_center(n))+'_pm'+str(dt)+'.mpc'
     try:
       open(infilename, 'r')

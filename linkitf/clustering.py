@@ -47,11 +47,8 @@ def fit_tracklet(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
 def get_tracklet_obs(vec,lines):
     results_dict = defaultdict(list)
 
-    # vec is the reference direction in equatorial coordinates
-    # so we rotate to ecliptic, because we want to.
+    # vec is the reference direction in ecliptic coordinates
     vec = np.array(vec)
-    # ecl_vec = np.dot(rot_mat, vec)
-    # vec = ecl_vec
     vec = vec/np.linalg.norm(vec)
     # mat is a rotation matrix that converts from ecliptic
     # vectors to the projection coordinate system.
@@ -76,20 +73,13 @@ def get_tracklet_obs(vec,lines):
             x_target, y_target, z_target = line[58:98].split()
             r_target = np.array([float(x_target), float(y_target), float(z_target)])
 
-            # Rotate to ecliptic coordinates
-            # r_target_ec = np.dot(rot_mat, r_target)
-
             # Rotate to projection coordinates
             theta_x, theta_y, theta_z = np.dot(mat, r_target)
 
             # Ignore theta_z after this; it should be very nearly 1.
-
             # Get observatory position, ultimately in projection coordinates.
             x_obs, y_obs, z_obs = line[98:138].split()
             r_obs = np.array([float(x_obs), float(y_obs), float(z_obs)])
-
-            # Rotate to ecliptic coordinates
-            # r_obs_ec = np.dot(rot_mat, r_obs)
 
             # Rotate to projection coordinates
             xe, ye, ze = np.dot(mat, r_obs)
@@ -101,7 +91,7 @@ def get_tracklet_obs(vec,lines):
             results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
 
     return results_dict
-# cluster positions z inputs: t_ref, g_gdot_pairs, vec, lines, fit_tracklet_func=fit_tracklet
+
 def _return_arrows_resuts(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func):
         # Now that we have the observations for each tracklet gathered together,
         # we iterate through the tracklets, doing a fit for each one.
@@ -119,7 +109,7 @@ def _return_arrows_resuts(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func):
         master_results[g_gdot] = results
     return master_results
 
-def _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, vec, outfilename):
+def _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, vec, outfilename, cluster_id_dict={}):
         # Now that we have the observations for each tracklet gathered together,
         # we iterate through the tracklets, doing a fit for each one.
     for g_gdot in g_gdot_pairs:
@@ -128,7 +118,14 @@ def _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, ve
         for k, v in results_dict.items():
 
             cx, mx, cy, my, t0 = fit_tracklet_func(t_ref, g, gdot, v)
-            outstring = "%12s %16.9lf %16.9lf %16.9lf %16.9lf %16.9lf\n" % (k, cx, mx, cy, my, t0)
+            if cluster_id_dict=={}:
+                outstring = "%12s %16.9lf %16.9lf %16.9lf %16.9lf %16.9lf\n" % (k, cx, mx, cy, my, t0)
+            else:
+                try:
+                    cid = cluster_id_dict[k.strip()]
+                except KeyError:
+                    cid = -1
+                outstring = "%12s %16.9lf %16.9lf %16.9lf %16.9lf %d\n" % (k, cx, mx, cy, my, cid)
 
             results.append(outstring)
 
@@ -140,10 +137,21 @@ def _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, ve
                 outfile.write(outstring)
                 outstring = '#  vec= %lf, %lf, %lf\n' % (vec[0], vec[1], vec[2])
                 outfile.write(outstring)
-                outstring = '#  desig              alpha         alpha_dot       beta             beta_dot         dt \n'
+                if cluster_id_dict=={}:
+                    outstring = '#  desig              alpha         alpha_dot       beta             beta_dot         dt \n'
+                else:
+                    outstring = '#  desig              alpha         alpha_dot       beta             beta_dot         clust_id \n'
                 outfile.write(outstring)
                 for outstring in results:
                     outfile.write(outstring)
+
+def write_transform_to_arrows(t_ref, g_gdot_pairs, vec, lines, outfilename, cluster_id_dict={}, fit_tracklet_func=fit_tracklet):
+    """ docs"""
+
+    results_dict = get_tracklet_obs(vec,lines)
+
+    _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, vec, outfilename,cluster_id_dict)
+
 
 def transform_to_arrows(t_ref, g_gdot_pairs, vec, lines, outfilename='', makefiles=False, fit_tracklet_func=fit_tracklet):
     """
@@ -184,10 +192,8 @@ def transform_to_arrows(t_ref, g_gdot_pairs, vec, lines, outfilename='', makefil
     """
     results_dict = get_tracklet_obs(vec,lines)
 
-    if not makefiles:
-        return _return_arrows_resuts(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func)
-    else:
-        _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, vec, outfilename)
+    return _return_arrows_resuts(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func)
+
 
 def cluster_sky_regions(g_gdot_pairs, pixels, t_ref, infilename, nside=8, angDeg=7.5, cluster_func=transform_to_arrows):
     """ cluster function that gets passed to the do_training_run"""
@@ -197,7 +203,7 @@ def cluster_sky_regions(g_gdot_pairs, pixels, t_ref, infilename, nside=8, angDeg
     pixel_results = {}
     #for i in range(hp.nside2npix(nside)):
     for i in pixels:
-        # print(i)
+        print(i)
         # Probably don't need to repeat the vector neighbor calculation.
         # This can just be stored.
         vec = hp.pix2vec(nside, i, nest=True)
@@ -211,16 +217,16 @@ def cluster_sky_regions(g_gdot_pairs, pixels, t_ref, infilename, nside=8, angDeg
 
     return pixel_results
 
-gs =[0.4]
-gdots = [-0.004, -0.003, -0.002, -0.001, 0.0, 0.001, 0.002, 0.003, 0.004]
-g_gdots = [(x,y) for x in gs for y in gdots]
+
 
 def _get_cluster_counter(master, dt, rad, mincount):
+    """ cluster_counter is unique on clusters and cluster id
+    dict is unique on tracklets"""
     cluster_counter = Counter()
+    cluster_id_dict = {}
     for pix, d in master.items():
         for g_gdot, arrows in d.items():
 
-            # The bit from here
             i = 0
             label_dict={}
             combined=[]
@@ -229,25 +235,22 @@ def _get_cluster_counter(master, dt, rad, mincount):
                 combined.append([cx, mx*dt, cy, my*dt])
                 i +=1
             points=np.array(combined)
-            # to here can be a function,
-            # that takes arrows and dt and
-            # returns label_dict and points array
 
-            # The bit from here
             tree = scipy.spatial.cKDTree(points)
             matches = tree.query_ball_tree(tree, rad)
-            # to here can be a function, that takes
-            # points are rad and returns tree and
-            # matches
 
             for j, match in enumerate(matches):
                 if len(match)>=mincount:
                     cluster_list =[]
                     for idx in match:
-                        cluster_list.append(label_dict[idx].strip())
+                        tracklet_id = label_dict[idx].strip()
+                        cluster_list.append(tracklet_id)
+                        cluster_id_dict.update({tracklet_id: j})
                     cluster_key='|'.join(sorted(cluster_list))
                     cluster_counter.update({cluster_key: 1})
-    return cluster_counter
+
+    return cluster_counter, cluster_id_dict
+
 
 def _rates_to_results(rates_dict, dts):
     """ helper for find clusters"""
@@ -270,59 +273,59 @@ def _rates_to_results(rates_dict, dts):
 
     return results_dict
 
-def find_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
-                    rtype='run', dt=15, rad=0.00124,
+gs =[0.4]
+gdots = [-0.004, -0.003, -0.002, -0.001, 0.0, 0.001, 0.002, 0.003, 0.004]
+g_gdots = [(x,y) for x in gs for y in gdots]
+
+def train_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
+                    dts=15, radii=0.00124,
                     cluster_sky_function=cluster_sky_regions, mincount=3):
-    """docs"""
-    valid_rtypes = ['run','test','train']
+    """ training docs"""
+    master = cluster_sky_function(g_gdots, pixels, t_ref, infilename)
+    # The training case
+    rates_dict={}
+    for dt in dts:
+        for rad in radii:
+            cluster_counter, cluster_id_dict = _get_cluster_counter(master, dt, rad, mincount)
+            # This region from here
+            errs = 0
+            for i, k in enumerate(cluster_counter.keys()):
+                keys = k.split('|')
+                stems = [key.split('_')[0] for key in keys]
+                stem_counter = Counter(stems)
+                if len(stem_counter)>1:
+                    errs +=1
 
-    # Check for valid type input
-    if rtype not in valid_rtypes:
-        raise ValueError('You must use a rtype in {0}, not {1}'.format(valid_rtypes,rtype))
+            rates_dict[dt_val, rad_val] = cluster_counter.keys(), errs
 
-    # Set different defaults for training
-    if dt==15 and rad==0.00124 and rtype=='train':
-        dt, rad = np.arange(5, 30, 5), np.arange(0.0001, 0.0100, 0.0001)
+    return _rates_to_results(rates_dict, dt)
 
-    if (hasattr(dt, '__len__') or hasattr(rad, '__len__')) and rtype!='train':
-        raise ValueError('test and run rtypes can only take scalar dt and rad values')
-
-    if not hasattr(rad, '__len__') and rtype=='train':
-        raise ValueError('train rtypes can only take a list or array of dt and rad values')
-
+def test_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
+                    dt=15, rad=0.00124,
+                    cluster_sky_function=cluster_sky_regions, mincount=3):
+    """ tst docs """
     master = cluster_sky_function(g_gdots, pixels, t_ref, infilename)
 
-    if rtype=='run':
-        return _get_cluster_counter(master, dt, rad, mincount)
+    cluster_counter, cluster_id_dict = _get_cluster_counter(master, dt, rad, mincount)
+    test_set = list(cluster_counter.keys())
+    success_dict, failure_counter = unique_clusters(test_set)
+    return len(success_dict), len(failure_counter), list(success_dict.keys()), list(failure_counter.keys())
 
-    elif rtype=='test':
-        cluster_counter = _get_cluster_counter(master, dt, rad, mincount)
-        test_set = list(cluster_counter.keys())
-        success_dict, failure_counter = unique_clusters(test_set)
-        return len(success_dict), len(failure_counter), list(success_dict.keys()), list(failure_counter.keys())
-    else:
-        # The training case
-        rates_dict={}
-        for dt_val in dt:
-            for rad_val in rad:
-                cluster_counter = _get_cluster_counter(master, dt_val, rad_val, mincount)
-                # This region from here
-                errs = 0
-                for i, k in enumerate(cluster_counter.keys()):
-                    keys = k.split('|')
-                    stems = [key.split('_')[0] for key in keys]
-                    stem_counter = Counter(stems)
-                    if len(stem_counter)>1:
-                        errs +=1
+def find_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
+                    dt=15, rad=0.00124,
+                    cluster_sky_function=cluster_sky_regions, mincount=3):
+    """ Run docs"""
+    master = cluster_sky_function(g_gdots, pixels, t_ref, infilename)
 
-                rates_dict[dt_val, rad_val] = cluster_counter.keys(), errs
-
-        return _rates_to_results(rates_dict, dt)
+    cluster_counter, cluster_id_dict = _get_cluster_counter(master, dt, rad, mincount)
+    return cluster_counter, cluster_id_dict
 
 
 
 
-## TODO why is the n not specified and alwasy -11???
+
+
+## TODO why is the n not specified and alwasy -11??? and angle is different
 def output_sky_regions(pixels, infilename, nside=8, n=-11, angDeg=7.5):
     hp_dict = util.get_hpdict(infilename)
 
@@ -390,17 +393,72 @@ def unique_clusters(test_set):
                     success_dict[stem] = v, k
     return success_dict, failure_counter
 
-# Should just passing the selection function, to avoid code duplication
-def generate_sky_region_files(infilename, nside, n, angDeg=5.5, g=0.4, gdot=0.0):
+def generate_sky_region_files(infilename, pixels, nside, n, angDeg=5.5, g=0.4, gdot=0.0, cluster_id_dict={}):
     hp_dict = util.get_hpdict(infilename)
 
-    for i in range(hp.nside2npix(nside)):
+    for i in pixels:
         vec = hp.pix2vec(nside, i, nest=True)
         neighbors = hp.query_disc(nside, vec, angDeg*np.pi/180., inclusive=True, nest=True)
         lines = []
         for pix in neighbors:
             for line in hp_dict[pix]:
                 lines.append(line)
-        outfilename = infilename.rstrip('.trans') + '_hp_' + ('%03d' % (i)) + '_g'+ ('%.2lf' % (g))+'_gdot' + ('%+5.1le' % (gdot))
+        if cluster_id_dict=={}:
+            outfilename = infilename.rstrip('.trans') + '_hp_' + ('%03d' % (i)) + '_g'+ ('%.2lf' % (g))+'_gdot' + ('%+5.1le' % (gdot))
+        else:
+            outfilename = infilename.rstrip('.trans') + '_hp_' + ('%03d' % (i)) + '_g'+ ('%.2lf' % (g))+'_gdot' + ('%+5.1le' % (gdot))+'_cid'
         if len(lines) > 0:
-            transform_to_arrows(util.lunation_center(n), [(g, gdot)], vec, lines, outfilename, makefiles=True)
+            write_transform_to_arrows(util.lunation_center(n), [(g, gdot)], vec, lines, outfilename, cluster_id_dict=cluster_id_dict)
+
+
+
+############################################################################
+# def find_clustersOLD(pixels, infilename, t_ref, g_gdots=g_gdots,
+#                     rtype='run', dt=15, rad=0.00124,
+#                     cluster_sky_function=cluster_sky_regions, mincount=3):
+#     """docs"""
+#     valid_rtypes = ['run','test','train']
+#
+#     # Check for valid type input
+#     if rtype not in valid_rtypes:
+#         raise ValueError('You must use a rtype in {0}, not {1}'.format(valid_rtypes,rtype))
+#
+#     # Set different defaults for training
+#     if dt==15 and rad==0.00124 and rtype=='train':
+#         dt, rad = np.arange(5, 30, 5), np.arange(0.0001, 0.0100, 0.0001)
+#
+#     if (hasattr(dt, '__len__') or hasattr(rad, '__len__')) and rtype!='train':
+#         raise ValueError('test and run rtypes can only take scalar dt and rad values')
+#
+#     if not hasattr(rad, '__len__') and rtype=='train':
+#         raise ValueError('train rtypes can only take a list or array of dt and rad values')
+#
+#     master = cluster_sky_function(g_gdots, pixels, t_ref, infilename)
+#
+#     if rtype=='run':
+#         cluster_counter, cluster_id_dict = _get_cluster_counter(master, dt, rad, mincount)
+#         return cluster_counter, cluster_id_dict
+#
+#     elif rtype=='test':
+#         cluster_counter, cluster_id_dict = _get_cluster_counter(master, dt, rad, mincount)
+#         test_set = list(cluster_counter.keys())
+#         success_dict, failure_counter = unique_clusters(test_set)
+#         return len(success_dict), len(failure_counter), list(success_dict.keys()), list(failure_counter.keys())
+#     else:
+#         # The training case
+#         rates_dict={}
+#         for dt_val in dt:
+#             for rad_val in rad:
+#                 cluster_counter, cluster_id_dict = _get_cluster_counter(master, dt_val, rad_val, mincount)
+#                 # This region from here
+#                 errs = 0
+#                 for i, k in enumerate(cluster_counter.keys()):
+#                     keys = k.split('|')
+#                     stems = [key.split('_')[0] for key in keys]
+#                     stem_counter = Counter(stems)
+#                     if len(stem_counter)>1:
+#                         errs +=1
+#
+#                 rates_dict[dt_val, rad_val] = cluster_counter.keys(), errs
+#
+#         return _rates_to_results(rates_dict, dt)

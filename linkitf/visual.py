@@ -16,7 +16,7 @@ import scipy.spatial
 import pickle
 from operator import add
 import matplotlib.cm as cm
-from matplotlib.colors import Normalize
+import matplotlib.colors as mlc
 
 
 def number_clusters_plot(pix_runs,true_count):
@@ -97,7 +97,7 @@ def auc_plot(pix_runs,true_count):
     plt.savefig('demo_data/AUC_demo')
     plt.show()
 
-def make_figure(filename,outpath=''):
+def make_figure(filename,cluster=False,outpath=''):
     plt.ioff()
     mxs, cxs, mys, cys, dts =[], [], [], [], []
     for line in open(filename):
@@ -112,12 +112,14 @@ def make_figure(filename,outpath=''):
 
     fig=plt.figure(figsize=(18, 16))
 
-    #norm = Normalize()
+    #norm = mlc.Normalize()
     #norm.autoscale(colors)
 
     colormap = cm.inferno
+    if cluster:
+        colormap = mlc.ListedColormap ( np.random.rand ( 256,3))
 
-    plt.quiver(cxs, cys, mxs, mys, dts, scale=0.3, width=0.0003)
+    plt.quiver(cxs, cys, mxs, mys, dts, cmap=colormap,scale=0.3, width=0.0003)
 
     # plt.xlim(-0.2, 0.2)
     # plt.ylim(-0.2, 0.2)

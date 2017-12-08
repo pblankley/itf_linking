@@ -24,6 +24,25 @@ Observatories = MPC_library.Observatories
 
 ObservatoryXYZ = Observatories.ObservatoryXYZ
 
+# Do the training run
+# print('Starting training run:')
+# for i,pix in enumerate(range(hp.nside2npix(nside))):
+#     # Percent complete
+#     out = i * 1. / len(range(hp.nside2npix(nside))) * 100
+#     sys.stdout.write("\r%d%%" % out)
+#     sys.stdout.flush()
+#
+#     pix_runs[pix] = find_clusters([pix], infilename, util.lunation_center(n), g_gdots=g_gdots, rtype='train')
+#
+# sys.stdout.write("\r%d%%" % 100)
+# print('\n')
+# #
+# # # Save the results as a pickle
+# with open(pickle_filename, 'wb') as handle:
+#     pickle.dump(pix_runs, handle, protocol=pickle.HIGHEST_PROTOCOL)
+# print('Different dt values:',*list(pix_runs[0].keys()))
+
+
 # GLOBALS
 nside=8
 #gs = [0.3, 0.35, 0.4, 0.45, 0.5]

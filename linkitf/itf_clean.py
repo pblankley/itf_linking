@@ -21,7 +21,6 @@ import util
 import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# os.path.join(BASE_DIR, 'data/plist_df.json')
 
 def clean_itf_data(path):
     itf_path = os.path.abspath(path)
