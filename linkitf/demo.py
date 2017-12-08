@@ -9,7 +9,7 @@ import pickle
 import healpy as hp
 from collections import Counter
 from lib import MPC_library
-from clustering import find_clusters
+from clustering import find_clusters, generate_sky_region_files, accessible_clusters
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # os.path.join(BASE_DIR, 'data/plist_df.json')
 
@@ -39,7 +39,7 @@ pickle_filename = infilename.rstrip('.trans') + '.pickle'
 #     sys.stdout.write("\r%d%%" % out)
 #     sys.stdout.flush()
 #
-#     pix_runs[pix] = util.do_training_run([pix], infilename, util.lunation_center(n), g_gdots=g_gdots)
+#     pix_runs[pix] = find_clusters([pix], infilename, util.lunation_center(n), g_gdots=g_gdots, rtype='train')
 #
 # sys.stdout.write("\r%d%%" % 100)
 # print('\n')
@@ -48,40 +48,35 @@ pickle_filename = infilename.rstrip('.trans') + '.pickle'
 # with open(pickle_filename, 'wb') as handle:
 #     pickle.dump(pix_runs, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-# with open(pickle_filename, 'rb') as handle:
-#     pix_runs = pickle.load(handle)
+with open(pickle_filename, 'rb') as handle:
+    pix_runs = pickle.load(handle)
 
 # print('Different dt values:',*list(pix_runs[0].keys()))
 # raise ValueError('stop')
 
 # Should save these results in files
-# true_count_dict, mergedCounter_dict, mergedTime_dict = util.accessible_clusters(list(pix_runs.keys()), infilename=infilename)
-# true_count = sum(true_count_dict.values())
-# print('True count of clusters: {}'.format(true_count))
+true_count_dict, mergedCounter_dict, mergedTime_dict = accessible_clusters(list(pix_runs.keys()), infilename=infilename)
+true_count = sum(true_count_dict.values())
+print('True count of clusters: {}'.format(true_count))
 
 # Plots
-# visual.number_clusters_plot(pix_runs,true_count)
-# visual.number_errors_plot(pix_runs)
-# visual.auc_plot(pix_runs,true_count)
+visual.number_clusters_plot(pix_runs,true_count)
+visual.number_errors_plot(pix_runs)
+visual.auc_plot(pix_runs,true_count)
 
 # Actually, this should be related to the angle between the direction of
 # Earth's motion and the direction of the observations.
 
 print('Based on our tuning, the best dt is {0} and best cluster radius is {1}'.format(dt,cr))
-# earth_vec = Observatories.getObservatoryPosition('500', util.lunation_center(n))
-# pixels, infilename, t_ref,g_gdots=g_gdots, mincount=3,dt=15,rad=0.00124
-# errs, clusts, trues = util.do_test_run(pix_runs, true_count_dict, earth_vec, dt=15, nside=nside)
+
 pixels=range(hp.nside2npix(nside))
 
-# right, wrong, ids_right, ids_wrong = util.do_test_run(pixels, infilename, \
-#                                             util.lunation_center(n), mincount=3, dt=15.0,rad= 0.00124)
 right, wrong, ids_right, ids_wrong = find_clusters(pixels, infilename, util.lunation_center(n), \
                                             rtype='test', mincount=3, dt=15.0,rad= 0.00124)
-#
-# print('Using our optimal parameters we got {0} percent of clusters with {1} errors.'.format(right/true_count,wrong))
-# print('We got',right,'right and',wrong,'wrong out of total',true_count)
-# print('errors:',errs,'clusts:',clusts,'true count of clusters:',trues)
-# print('We acheived {0} percent accuracy with {1} errors.'.format(clusts/trues,errs))
+
+print('Using our optimal parameters we got {0} percent of clusters with {1} errors.'.format(right/true_count,wrong))
+print('We got',right,'right and',wrong,'wrong out of total',true_count)
+
 
 
 print('Now that we have used training data to come up with dt and cluster radius, lets run on the ITF.')
@@ -99,7 +94,7 @@ gdots = [-0.004, -0.003, -0.002, -0.001, 0.0, 0.001, 0.002, 0.003, 0.004]
 g_gdots = [(x,y) for x in gs for y in gdots]
 
 # print('Starting ITF run...')
-itf_raw_results = find_clusters(pixels, itf_file, itf_t_ref,rtype='run',g_gdots=g_gdots,dt=dt,rad=cr)
+# itf_raw_results = find_clusters(pixels, itf_file, itf_t_ref,rtype='run',g_gdots=g_gdots,dt=dt,rad=cr)
 # print('ITF run finished!')
 #
 # with open(itf_pickle, 'wb') as handle:
@@ -146,14 +141,14 @@ c_key = 'P10oagN|P10oahr|P10ohw2'
 #
 # pixels= range(hp.nside2npix(nside))
 #
-# real_run = util.do_run(g_gdots, pixels, infilename, nside=nside, n=n, dt=15)
+real_run = find_clusters(pixels, infilename,  util.lunation_center(n), rtype='run', g_gdots=g_gdots, dt=15)
 #
 # print('How many in the run? There were {}.'.format(len(real_run)))
 #
 # with open('demo_data/demo_results.pickle', 'wb') as handle:
 #     pickle.dump(real_run, handle, protocol=pickle.HIGHEST_PROTOCOL)
 #
-# util.generate_sky_region_files(infilename, nside=nside, n=n)
+# generate_sky_region_files(infilename, nside=nside, n=n)
 #
 # dne = []
 # for p in range(hp.nside2npix(nside)):
@@ -176,3 +171,8 @@ c_key = 'P10oagN|P10oahr|P10ohw2'
 # print('There were {} that had no clusters.'.format(len(dne)))
 
 #############################################################################
+
+
+# earth_vec = Observatories.getObservatoryPosition('500', util.lunation_center(n))
+# pixels, infilename, t_ref,g_gdots=g_gdots, mincount=3,dt=15,rad=0.00124
+# errs, clusts, trues = util.do_test_run(pix_runs, true_count_dict, earth_vec, dt=15, nside=nside)

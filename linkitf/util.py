@@ -56,6 +56,23 @@ def make_histogram(mergedCounter):
         hist_dict[v].append(k)
     return hist_dict
 
+def number_of_occurances(mergedCounter_dict, nside):
+    num_occ=Counter()
+    for pix in range(hp.nside2npix(nside)):
+        hist=make_histogram(mergedCounter_dict[pix])
+        for k, v in hist.items():
+            num_occ.update({k: len(v)})
+    return num_occ
+
+def get_hpdict(infilename):
+    hp_dict = defaultdict(list)
+    with open(infilename) as file:
+        for line in file:
+            if line.startswith('#'):
+                continue
+            pix = int(line.split()[-1])
+            hp_dict[pix].append(line)
+    return hp_dict
 
 #='data/UnnObs_Training_1_line_A.mpc'
 def get_original_tracklets_dict(filename):
@@ -66,6 +83,7 @@ def get_original_tracklets_dict(filename):
                 desig = line[0:12].strip()
                 tracklets[desig].append(i)
     return tracklets
+
 # ='data/UnnObs_Training_1_line_A.txt'
 def get_original_observation_array(filename):
     tracklets = defaultdict(list)
@@ -179,8 +197,7 @@ def fit_tracklet_grav(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun, eps2=1e
 
         return (cx, mx, cy, my, t_emit[0])
 
-
-    # # Select positions and cluster positions compare TODO
+# # Select positions and cluster positions compare TODO
     # def select_positions_z(t_ref, g, gdot, vec, lines, outfilename, fit_tracklet_func=fit_tracklet):
     #     """
     #     This is the one to use.  This routine will be used repeatedly.

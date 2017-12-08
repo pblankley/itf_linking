@@ -192,21 +192,12 @@ def transform_to_arrows(t_ref, g_gdot_pairs, vec, lines, outfilename='', makefil
 def cluster_sky_regions(g_gdot_pairs, pixels, t_ref, infilename, nside=8, angDeg=7.5, cluster_func=transform_to_arrows):
     """ cluster function that gets passed to the do_training_run"""
     # This bit from here
-    hp_dict = defaultdict(list)
-    with open(infilename) as file:
-        for line in file:
-            if line.startswith('#'):
-                continue
-            pix = int(line.split()[-1])
-            hp_dict[pix].append(line)
-    # to here can be a function that
-    # accepts infilename and returns
-    # hp_dict
+    hp_dict = util.get_hpdict(infilename)
 
     pixel_results = {}
     #for i in range(hp.nside2npix(nside)):
     for i in pixels:
-        print(i)
+        # print(i)
         # Probably don't need to repeat the vector neighbor calculation.
         # This can just be stored.
         vec = hp.pix2vec(nside, i, nest=True)
@@ -260,6 +251,7 @@ def _get_cluster_counter(master, dt, rad, mincount):
 
 def _rates_to_results(rates_dict, dts):
     """ helper for find clusters"""
+    results_dict = {}
     for dt in dts:
         values = []
         for k, v in rates_dict.items():
@@ -282,11 +274,15 @@ def find_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
                     rtype='run', dt=15, rad=0.00124,
                     cluster_sky_function=cluster_sky_regions, mincount=3):
     """docs"""
-
     valid_rtypes = ['run','test','train']
 
+    # Check for valid type input
     if rtype not in valid_rtypes:
         raise ValueError('You must use a rtype in {0}, not {1}'.format(valid_rtypes,rtype))
+
+    # Set different defaults for training
+    if dt==15 and rad==0.00124 and rtype=='train':
+        dt, rad = np.arange(5, 30, 5), np.arange(0.0001, 0.0100, 0.0001)
 
     if (hasattr(dt, '__len__') or hasattr(rad, '__len__')) and rtype!='train':
         raise ValueError('test and run rtypes can only take scalar dt and rad values')
@@ -306,7 +302,6 @@ def find_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
         return len(success_dict), len(failure_counter), list(success_dict.keys()), list(failure_counter.keys())
     else:
         # The training case
-        results_dict = {}
         rates_dict={}
         for dt_val in dt:
             for rad_val in rad:
@@ -329,15 +324,7 @@ def find_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
 
 ## TODO why is the n not specified and alwasy -11???
 def output_sky_regions(pixels, infilename, nside=8, n=-11, angDeg=7.5):
-    hp_dict = defaultdict(list)
-    with open(infilename) as file:
-        i=0
-        for line in file:
-            if line.startswith('#'):
-                continue
-            pix = int(line.split()[-1])
-            hp_dict[pix].append(line)
-            i += 1
+    hp_dict = util.get_hpdict(infilename)
 
     pixel_results = {}
     for i in pixels:
@@ -405,13 +392,7 @@ def unique_clusters(test_set):
 
 # Should just passing the selection function, to avoid code duplication
 def generate_sky_region_files(infilename, nside, n, angDeg=5.5, g=0.4, gdot=0.0):
-    hp_dict = defaultdict(list)
-    with open(infilename) as file:
-        for line in file:
-            if line.startswith('#'):
-                continue
-            pix = int(line.split()[-1])
-            hp_dict[pix].append(line)
+    hp_dict = util.get_hpdict(infilename)
 
     for i in range(hp.nside2npix(nside)):
         vec = hp.pix2vec(nside, i, nest=True)
@@ -422,4 +403,4 @@ def generate_sky_region_files(infilename, nside, n, angDeg=5.5, g=0.4, gdot=0.0)
                 lines.append(line)
         outfilename = infilename.rstrip('.trans') + '_hp_' + ('%03d' % (i)) + '_g'+ ('%.2lf' % (g))+'_gdot' + ('%+5.1le' % (gdot))
         if len(lines) > 0:
-            transform_to_arrows(lunation_center(n), [(g, gdot)], vec, lines, outfilename, makefiles=True)
+            transform_to_arrows(util.lunation_center(n), [(g, gdot)], vec, lines, outfilename, makefiles=True)
