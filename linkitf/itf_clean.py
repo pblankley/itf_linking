@@ -22,6 +22,15 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+def clean_itf_data_mpc(path):
+    mpc_path = os.path.abspath(path)
+    # home_dir = os.path.dirname(itf_path)
+    tracklets, tracklets_jd_dict, sortedTracklets = cl.get_sorted_tracklets(mpc_path)
+    cl.separate_time_windows(tracklets, sortedTracklets, tracklets_jd_dict, \
+                            file_stem=mpc_path, dt=15.)
+    for n in range(-825,14):
+        cl.index_positions(n, lambda t: 2.5, file_stem=mpc_path, dt=15.)
+
 def clean_itf_data(path):
     itf_path = os.path.abspath(path)
     home_dir = os.path.dirname(itf_path)

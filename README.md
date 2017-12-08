@@ -22,4 +22,10 @@ Barron, E. G., Kaplan, G. H., Bangert, J., Bartlett, J. L., Puatua, W., Harris, 
 
 Other than these packages, it is expected that the user has the usual python numerical libraries.
 
-Once you have these installed, go to the linkitf directory of the repo and run the demo.py file. 
+Once you have these installed, go to the linkitf directory of the repo and run the demo.py file.
+
+To run the entire codebase, you will need to get two files from google drive and put them in a folder named 'data' in the linkitf directory
+
+https://drive.google.com/drive/u/0/folders/1Dkzs4HMFHf-AaG5wrHtMsWi0zHhWsrlI
+
+the files are itf_new_1_line.txt and itf_new_1_line_ec.mpc enter the paths for these files when you run driver.py 
