@@ -9,6 +9,7 @@ import pickle
 import healpy as hp
 from collections import Counter
 from lib import MPC_library
+from clustering import find_clusters
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # os.path.join(BASE_DIR, 'data/plist_df.json')
 
@@ -24,13 +25,12 @@ g_gdots = [(x,y) for x in gs for y in gdots]
 
 pix_runs = {}
 nside=8
-n = -11
+n = -14
 dt=15.0
 cr=0.00124
 
-infilename='demo_data/UnnObs_Training_1_line_A_2457397.5_pm15.0_r2.5.trans'
+infilename='demo_train/UnnObs_Training_1_line_A_ec_labelled_2457308.5_pm15.0_r2.5.trans'
 pickle_filename = infilename.rstrip('.trans') + '.pickle'
-
 # Do the training run
 # print('Starting training run:')
 # for i,pix in enumerate(range(hp.nside2npix(nside))):
@@ -43,15 +43,15 @@ pickle_filename = infilename.rstrip('.trans') + '.pickle'
 #
 # sys.stdout.write("\r%d%%" % 100)
 # print('\n')
-#
-# # Save the results as a pickle
+# #
+# # # Save the results as a pickle
 # with open(pickle_filename, 'wb') as handle:
 #     pickle.dump(pix_runs, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-with open(pickle_filename, 'rb') as handle:
-    pix_runs = pickle.load(handle)
+# with open(pickle_filename, 'rb') as handle:
+#     pix_runs = pickle.load(handle)
 
-print('Different dt values:',*list(pix_runs[0].keys()))
+# print('Different dt values:',*list(pix_runs[0].keys()))
 # raise ValueError('stop')
 
 # Should save these results in files
@@ -59,14 +59,7 @@ print('Different dt values:',*list(pix_runs[0].keys()))
 # true_count = sum(true_count_dict.values())
 # print('True count of clusters: {}'.format(true_count))
 
-# num_occ=Counter()
-# for pix in range(hp.nside2npix(nside)):
-#     hist=util.make_histogram(mergedCounter_dict[pix])
-#     for k, v in hist.items():
-#         num_occ.update({k: len(v)})
-#
-# print(num_occ)
-
+# Plots
 # visual.number_clusters_plot(pix_runs,true_count)
 # visual.number_errors_plot(pix_runs)
 # visual.auc_plot(pix_runs,true_count)
@@ -80,10 +73,13 @@ print('Based on our tuning, the best dt is {0} and best cluster radius is {1}'.f
 # errs, clusts, trues = util.do_test_run(pix_runs, true_count_dict, earth_vec, dt=15, nside=nside)
 pixels=range(hp.nside2npix(nside))
 
-# right, wrong, ids_right, ids_wrong = util.do_test_run(pixels, infilename, util.lunation_center(n), mincount=3, dt=15.0,rad= 0.00124)
-
-# print('Using our optimal parameters we got {0} percent of clusters with {1} errors.'.format(right/(right+wrong),wrong))
-
+# right, wrong, ids_right, ids_wrong = util.do_test_run(pixels, infilename, \
+#                                             util.lunation_center(n), mincount=3, dt=15.0,rad= 0.00124)
+right, wrong, ids_right, ids_wrong = find_clusters(pixels, infilename, util.lunation_center(n), \
+                                            rtype='test', mincount=3, dt=15.0,rad= 0.00124)
+#
+# print('Using our optimal parameters we got {0} percent of clusters with {1} errors.'.format(right/true_count,wrong))
+# print('We got',right,'right and',wrong,'wrong out of total',true_count)
 # print('errors:',errs,'clusts:',clusts,'true count of clusters:',trues)
 # print('We acheived {0} percent accuracy with {1} errors.'.format(clusts/trues,errs))
 
@@ -103,7 +99,7 @@ gdots = [-0.004, -0.003, -0.002, -0.001, 0.0, 0.001, 0.002, 0.003, 0.004]
 g_gdots = [(x,y) for x in gs for y in gdots]
 
 # print('Starting ITF run...')
-# itf_raw_results = util.do_run(pixels, itf_file, itf_t_ref,g_gdots=g_gdots,dt=dt,rad=cr)
+itf_raw_results = find_clusters(pixels, itf_file, itf_t_ref,rtype='run',g_gdots=g_gdots,dt=dt,rad=cr)
 # print('ITF run finished!')
 #
 # with open(itf_pickle, 'wb') as handle:
@@ -113,9 +109,9 @@ g_gdots = [(x,y) for x in gs for y in gdots]
 # with open(itf_pickle, 'rb') as handle:
 #         itf_raw_results = pickle.load(handle)
 
-# Get the output in a format for the MPC to check with orbit fitting
-itf_tracklets_dict = util.get_original_tracklets_dict('demo_reference/itf_new_1_line_subset.mpc')
-itf_obs_array = util.get_original_observation_array('demo_reference/itf_new_1_line_subset.txt')
+# Get the output in a format for the MPC to check with orbit fitting TODO
+# itf_tracklets_dict = util.get_original_tracklets_dict('demo_reference/itf_new_1_line_subset.mpc')
+# itf_obs_array = util.get_original_observation_array('demo_reference/itf_new_1_line_subset.txt')
 
 # obs_dict={}
 # for cluster_key in itf_raw_results.keys():
@@ -134,7 +130,7 @@ itf_obs_array = util.get_original_observation_array('demo_reference/itf_new_1_li
 c_key = 'P10oagN|P10oahr|P10ohw2'
 # print('Example output for one cluster:','\n','Key:,',c_key,'\n','Output',itf_results[c_key])
 
-# util.generate_sky_region_files('demo_itf/itf_new_1_line_2457308.5_pm15.0_r2.5.trans', nside=8, n=-11)
+# util.generate_sky_region_files('demo_itf/itf_new_1_line_2457308.5_pm15.0_r2.5.trans', nside=nside, n=-14)
 # visual.make_figure('demo_data/UnnObs_Training_1_line_A_2457397.5_pm15.0_r2.5_hp_023_g0.40_gdot+0.0e+00')
 # visual.make_figure('demo_itf/itf_new_1_line_2457308.5_pm15.0_r2.5_hp_017_g0.40_gdot+0.0e+00')
 
@@ -157,26 +153,26 @@ c_key = 'P10oagN|P10oahr|P10ohw2'
 # with open('demo_data/demo_results.pickle', 'wb') as handle:
 #     pickle.dump(real_run, handle, protocol=pickle.HIGHEST_PROTOCOL)
 #
-util.generate_sky_region_files(infilename, nside=nside, n=n)
+# util.generate_sky_region_files(infilename, nside=nside, n=n)
 #
-dne = []
-for p in range(hp.nside2npix(nside)):
-    path_makefig = 'demo_itf/itf_new_1_line_2457308.5_pm15.0_r2.5_hp_{}_g0.40_gdot+0.0e+00'.format(('%03d' % (p)))
-    try:
-        visual.make_figure(path_makefig)
-    except:
-        dne.append(p)
-        pass
-print('There were {} that had no clusters.'.format(len(dne)))
+# dne = []
+# for p in range(hp.nside2npix(nside)):
+#     path_makefig = 'demo_itf/itf_new_1_line_2457308.5_pm15.0_r2.5_hp_{}_g0.40_gdot+0.0e+00'.format(('%03d' % (p)))
+#     try:
+#         visual.make_figure(path_makefig)
+#     except:
+#         dne.append(p)
+#         pass
+# print('There were {} that had no clusters.'.format(len(dne)))
 
-dne = []
-for p in range(hp.nside2npix(nside)):
-    path_makefig = 'demo_data/UnnObs_Training_1_line_A_2457397.5_pm15.0_r2.5_hp_{}_g0.40_gdot+0.0e+00'.format(('%03d' % (p)))
-    try:
-        visual.make_figure(path_makefig)
-    except:
-        dne.append(p)
-        pass
-print('There were {} that had no clusters.'.format(len(dne)))
+# dne = []
+# for p in range(hp.nside2npix(nside)):
+#     path_makefig = 'demo_train/UnnObs_Training_1_line_A_ec_labelled_2457308.5_pm15.0_r2.5_hp_{}_g0.40_gdot+0.0e+00'.format(('%03d' % (p)))
+#     try:
+#         visual.make_figure(path_makefig)
+#     except:
+#         dne.append(p)
+#         pass
+# print('There were {} that had no clusters.'.format(len(dne)))
 
 #############################################################################

@@ -11,16 +11,17 @@ from lib import MPC_library
 import util
 
 
-
-# This routine checks the 80-character input line to see if it contains a special character (S, R, or V) that indicates a 2-line
-# record.
 def is_two_line(line):
+    """ This routine checks the 80-character input line to see if it contains
+    a special character (S, R, or V) that indicates a 2-line record. """
     note2 = line[14]
     return note2=='S' or note2=='R' or note2=='V'
 
-# This routine opens and reads filename, separating the records into those in the 1-line and 2-line formats.
-# The 2-line format lines are merged into single 160-character records for processing line-by-line.
+
 def split_MPC_file(filename):
+    """ This routine opens and reads filename, separating the records into
+    those in the 1-line and 2-line formats. The 2-line format lines are merged
+    into single 160-character records for processing line-by-line. """
     filename_1_line = filename.rstrip('.txt')+"_1_line.txt"
     filename_2_line = filename.rstrip('.txt')+"_2_line.txt"
     with open(filename_1_line, 'w') as f1_out, open(filename_2_line, 'w') as f2_out:
@@ -38,14 +39,8 @@ def split_MPC_file(filename):
                     f1_out.write(line)
                     line1 = None
 
-
-# def readMPC_1_line(filename='NumObs_1_line.txt', nrows=1000000):
-#     colspecs = [(0, 5), (5, 12), (12, 13), (13, 14), (14, 15), (15, 32), (32, 44), (44, 56), (65, 71), (77, 80)]
-#     colnames = ['objName', 'provDesig', 'disAst', 'note1', 'note2', 'dateObs', 'RA', 'Dec', 'MagFilter', 'obsCode']
-#     df = pd.read_fwf(filename, colspecs=colspecs, names=colnames, header=None, nrows=nrows)
-#     return df
-
 def convertObs80(line):
+    """ Special case conversion for a corrupted file line in the ITF file."""
     objName   = line[0:5]
     provDesig = line[5:12]
     disAst    = line[12:13]
@@ -60,16 +55,8 @@ def convertObs80(line):
     return objName, provDesig, disAst, note1, note2, dateObs, RA, Dec, mag, filt, obsCode
 
 
-def splitMagFilter(magFilter):
-    pieces = magFilter.split()
-    if len(pieces)==0:
-        return None, None
-    elif len(pieces)==1:
-         return pieces[0], None
-    else:
-        return pieces[0], pieces[1]
-
 def get_sorted_tracklets(itf_filename):
+    """ From the MPC file pull out all the tracklets."""
     tracklets = defaultdict(list)
     tracklets_jd_dict = {}
     with open(itf_filename) as infile:
@@ -85,7 +72,23 @@ def get_sorted_tracklets(itf_filename):
     return tracklets, tracklets_jd_dict, sortedTrackletKeys
 
 
-def separate_time_windows(tracklets, sortedTracklets, tracklets_jd_dict, file_stem, n_begin=-825, n_end=14, dt=15., suff='.mpc'):
+def separate_time_windows(tracklets, sortedTracklets, tracklets_jd_dict, file_stem, \
+                                    n_begin=-825, n_end=14, dt=15., suff='.mpc'):
+    """ Sweep through the tracklets once, outputting them into a sequence of
+    overlapping time ranges that can be processed separately.
+    -------
+    Args: tracklets; dict, the first item returned from get_sorted_tracklets.
+          sortedTracklets; list, the second item returned from get_sorted_tracklets.
+          tracklets_jd_dict; dict, the third item returned from get_sorted_tracklets.
+          file_stem; str, path to the realted mpc file that we are splitting up.
+          n_begin; int, the beginning index for the lunar centers.
+          n_end; int, the end index for the lunar centers.
+          dt; float, the day scale factor used to weight realtive importance of
+                position and velocity.
+          suff; str, the suffix of the file, normally ".mpc" but sometimes ".txt"
+    --------
+    Returns: None; it just writes files to the directory you specify.
+    """
     t_center = util.lunation_center(n_begin)
     files = {}
 
@@ -144,23 +147,24 @@ def adjust_position(r, rho_target, re):
 
     return (rho_p, (x_p, y_p, z_p)), (rho_m, (x_m, y_m, z_m))
 
-# Does the transformations on the data using the date of the n-th new
-# moon as the reference time.
-#
-# It is reading and processing the entire *.mpc file.
-#
-# This does the heliocentric tranformation for the assumed radius function,
-# r_func.
-#
-# It then does light-time correction.
-#
-# And it appends a healpix number on each line in order to be able to quickly
-# select data from a given region of sky.
-#
-# This generates a file called *.trans, and it incorporates
-# the distance assumed in the file name.
-#
 def index_positions(n, r_func, file_stem, dt=45., nside=8):
+        """
+        Does the transformations on the data using the date of the n-th new
+        moon as the reference time.
+
+        It is reading and processing the entire *.mpc file.
+
+        This does the heliocentric tranformation for the assumed radius function,
+        r_func.
+
+        It then does light-time correction.
+
+        And it appends a healpix number on each line in order to be able to quickly
+        select data from a given region of sky.
+
+        This generates a file called *.trans, and it incorporates
+        the distance assumed in the file name.
+        """
     infilename = file_stem.rstrip('.mpc')+'_'+str(util.lunation_center(n))+'_pm'+str(dt)+'.mpc'
     try:
       open(infilename, 'r')
@@ -170,8 +174,6 @@ def index_positions(n, r_func, file_stem, dt=45., nside=8):
     r_ref = r_func(t_ref)
     r_name = "_r%.1lf" % (r_ref)
     outfilename = file_stem.rstrip('.mpc')+'_'+str(util.lunation_center(n))+'_pm'+str(dt)+r_name+'.trans'
-
-    #rot_mat = MPC_library.rotate_matrix(-MPC_library.Constants.ecl)
 
     with open(infilename, 'r') as infile, open(outfilename, 'w') as outfile:
         for line in infile:
