@@ -7,13 +7,12 @@ import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import pandas as pd
 import math
-import lib.kepcart as kc
 import healpy as hp
 import collections
 import astropy
 from collections import defaultdict
 from collections import Counter
-from lib import MPC_library
+from libr import MPC_library
 import scipy.spatial
 import pickle
 from operator import add

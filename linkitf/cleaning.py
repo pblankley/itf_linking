@@ -7,7 +7,7 @@ import healpy as hp
 import collections
 import astropy
 from collections import defaultdict
-from lib import MPC_library
+from libr import MPC_library
 import util
 
 

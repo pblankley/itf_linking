@@ -12,7 +12,7 @@ import collections
 import astropy
 from collections import defaultdict
 from collections import Counter
-import lib.MPC_library as MPC_library
+from libr import MPC_library
 import scipy.spatial
 import pickle
 from operator import add

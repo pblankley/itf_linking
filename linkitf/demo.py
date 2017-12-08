@@ -8,7 +8,7 @@ import visual
 import pickle
 import healpy as hp
 from collections import Counter
-from lib import MPC_library
+from libr import MPC_library
 from clustering import find_clusters, generate_sky_region_files, accessible_clusters
 from clustering import train_clusters, test_clusters
 
