@@ -80,7 +80,7 @@ for cluster_key in itf_raw_results.keys():
 # with open('demo_itf/itf_results', 'rb') as handle:
 #     itf_results = pickle.load(handle)
 #
-print('We clustered {0} asteroids from the ITF!'.format(len(itf_results.keys())))
+print('We clustered {0} asteroids from the ITF!'.format(len(obs_dict.keys())))
 print('NOTE: We only count clusters with 3 or more tracklets.')
 
 generate_sky_region_files(itf_file, [281], nside=itf_nside, n=itf_n)
