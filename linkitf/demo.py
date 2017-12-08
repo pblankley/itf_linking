@@ -44,7 +44,7 @@ print('Based on our tuning, the best dt is {0} and best cluster radius is {1}'.f
 print('Now that we have shown our performance on training data, lets run on the ITF.')
 
 itf_file = os.path.join(BASE_DIR, 'demo_itf/itf_new_1_line_ec_2457308.5_pm15.0_r2.5.trans')
-# itf_pickle = itf_file.rstrip('.trans') + '.pickle'
+itf_pickle = itf_file.rstrip('.trans') + '.pickle'
 itf_n = -14
 itf_nside = 8
 itf_pixels = range(hp.nside2npix(itf_nside))
