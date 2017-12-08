@@ -22,4 +22,4 @@ Barron, E. G., Kaplan, G. H., Bangert, J., Bartlett, J. L., Puatua, W., Harris, 
 
 Other than these packages, it is expected that the user has the usual python numerical libraries.
 
-Once you have these installed, go to the root directory of the repo and run the demo.py file. 
+Once you have these installed, go to the linkitf directory of the repo and run the demo.py file. 
