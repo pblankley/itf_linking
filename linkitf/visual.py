@@ -191,6 +191,10 @@ def make_figure(filename,cluster=False,subs=True,outpath=''):
     plt.ylim(-0.1, 0.1)
     plt.xlabel('alpha')
     plt.ylabel('beta')
+    if cluster:
+        plt.title('Clusters with 3 or more tracklets in this time slice, colored by cluster.')
+    else:
+        plt.title('All tracklets in this time slice, colored by time difference.')
     if outpath=='':
         outfile = filename+'.pdf'
     else:
