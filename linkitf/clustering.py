@@ -7,6 +7,7 @@ import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import pandas as pd
 import math
+import sys
 import lib.kepcart as kc
 import healpy as hp
 import collections
@@ -201,9 +202,13 @@ def cluster_sky_regions(g_gdot_pairs, pixels, t_ref, infilename, nside=8, angDeg
     hp_dict = util.get_hpdict(infilename)
 
     pixel_results = {}
-    #for i in range(hp.nside2npix(nside)):
-    for i in pixels:
-        print(i)
+    print('Starting run...')
+    for prog,i in enumerate(pixels):
+        # Percent complete
+        out = prog * 1. / len(pixels) * 100
+        sys.stdout.write("\r%d%%" % out)
+        sys.stdout.flush()
+
         # Probably don't need to repeat the vector neighbor calculation.
         # This can just be stored.
         vec = hp.pix2vec(nside, i, nest=True)
@@ -215,6 +220,9 @@ def cluster_sky_regions(g_gdot_pairs, pixels, t_ref, infilename, nside=8, angDeg
         if len(lines) > 0:
             pixel_results[i] = cluster_func(t_ref, g_gdot_pairs, vec, lines)
 
+    sys.stdout.write("\r%d%%" % 100)
+    print('\n')
+    print('Run finished!')
     return pixel_results
 
 
@@ -368,7 +376,14 @@ def accessible_clusters(pixels, infilename, mincount=3):
         mergedCounter_dict[pix]=mergedCounter
         mergedTime_dict[pix]=time_dict
 
-    return true_counts, mergedCounter_dict, mergedTime_dict
+    clusterID_set = set()
+    for pix, cntr in mergedCounter_dict.items():
+        for cID, count in cntr.items():
+            if count>=mincount:
+                clusterID_set.update({cID})
+
+    # return true_counts, mergedCounter_dict, mergedTime_dict
+    return clusterID_set, mergedCounter_dict, mergedTime_dict
 
 def member_counts(k, sep='|', suff='_'):
     """ helper function for unique clusters, counts the instances of an id in a cluster """

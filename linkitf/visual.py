@@ -29,9 +29,10 @@ def number_clusters_plot(pix_runs,true_count,outpath=''):
           true_count; int, the true number of clusters in training.
             Get this value by summing up the values of true_count_dict from
             "accessible_clusters.
+          outpath; str, where you want the file to go (e.g. 'plots/arrows')
     -------
-    Returns: None; plots the graph.
-    """"
+    Returns: None; plots the graph, and saves the fig
+    """
     for dt in np.arange(5, 30, 5):
         pixels=list(pix_runs.keys())
         ds = pix_runs[pixels[0]][dt][0]
@@ -61,9 +62,10 @@ def number_errors_plot(pix_runs,outpath=''):
     Args: pix_runs; the result of looping over various healpy pixel values
             in training and putting them in a dictionary.  To learn more
             about this data structure look at the docs for tuning.
+          outpath; str, where you want the file to go (e.g. 'plots/arrows')
     -------
-    Returns: None; plots the graph.
-    """"
+    Returns: None; plots the graph, and saves the fig
+    """
     for dt in np.arange(5, 30, 5):
         pixels=list(pix_runs.keys())
         ds = pix_runs[pixels[0]][dt][0]
@@ -101,9 +103,10 @@ def auc_plot(pix_runs,true_count,outpath=''):
           true_count; int, the true number of clusters in training.
             Get this value by summing up the values of true_count_dict from
             "accessible_clusters.
+          outpath; str, where you want the file to go (e.g. 'plots/arrows')
     -------
-    Returns: None; plots the graph.
-    """"
+    Returns: None; plots the graph and saves the fig
+    """
     for dt in np.arange(5, 30, 5):
         pixels=list(pix_runs.keys())
         ds = pix_runs[pixels[0]][dt][0]
@@ -127,18 +130,54 @@ def auc_plot(pix_runs,true_count,outpath=''):
         plt.savefig(outpath)
     plt.show()
 
-def make_figure(filename,cluster=False,outpath=''):
-    plt.ioff()
+def _get_vals_for_plot(filename,cluster,subs):
+    """ Get the columns and process based on the
+    passed flags for the make_figure function."""
     mxs, cxs, mys, cys, dts =[], [], [], [], []
-    for line in open(filename):
-        if line.startswith('#'):
-            continue
-        desig, cx, mx, cy, my, dt = line.split()
-        mxs.append(float(mx))
-        cxs.append(float(cx))
-        mys.append(float(my))
-        cys.append(float(cy))
-        dts.append(float(dt))
+    # print(cluster,subs)
+    if cluster and subs:
+        # print('in here')
+        for line in open(filename):
+            if line.startswith('#'):
+                continue
+            desig, cx, mx, cy, my, cid = line.split()
+            if int(cid)!=-1:
+
+                mxs.append(float(mx))
+                cxs.append(float(cx))
+                mys.append(float(my))
+                cys.append(float(cy))
+                dts.append(float(cid))
+    else:
+        for line in open(filename):
+            if line.startswith('#'):
+                continue
+            desig, cx, mx, cy, my, dt = line.split()
+            mxs.append(float(mx))
+            cxs.append(float(cx))
+            mys.append(float(my))
+            cys.append(float(cy))
+            dts.append(float(dt))
+    return mxs, cxs, mys, cys, dts
+
+def make_figure(filename,cluster=False,subs=True,outpath=''):
+    """ This function plots the asteroids on the tangent plane viewed as if
+    we are standing on the sun (heliocentric view).  It takes in the file
+    produced by generate_sky_region_files and a T/F flag for clustering.
+    If you pass in the T flag for clustering, make sure you give it the
+    right file.  The file that ends in '_cid' is meant for clustering, and the
+    file that has no '_cid' is meant for plotting with color in respect to
+    changing time.
+    -------
+    Args: filename; file produced by generate_sky_region_files.
+          cluster; bool, True means color categorically by cluster id
+                    False meant color by time.
+          outpath; str, where you want the file to go (e.g. 'plots/arrows')
+    -------
+    Returns: None; plots the graph and saves the fig
+    """
+    plt.ioff()
+    mxs, cxs, mys, cys, dts = _get_vals_for_plot(filename,cluster,subs)
 
     fig=plt.figure(figsize=(18, 16))
 
@@ -148,8 +187,8 @@ def make_figure(filename,cluster=False,outpath=''):
 
     plt.quiver(cxs, cys, mxs, mys, dts, cmap=colormap,scale=0.3, width=0.0003)
 
-    # plt.xlim(-0.2, 0.2)
-    # plt.ylim(-0.2, 0.2)
+    plt.xlim(-0.1, 0.1)
+    plt.ylim(-0.1, 0.1)
     plt.xlabel('alpha')
     plt.ylabel('beta')
     if outpath=='':

@@ -24,6 +24,9 @@ import cleaning as cl
 from clustering import find_clusters
 from itf_clean import clean_itf_data
 
-clean_itf_data('data/here_is_itf.txt')
-with open('data/here_is_itf.txt') as f:
-    pass
+# clean_itf_data('data/here_is_itf.txt')
+with open('demo_itf/itf_clust_ids.pickle', 'rb') as handle:
+    itf_clust_ids = pickle.load(handle)
+print(type(itf_clust_ids))
+print(list(itf_clust_ids.keys())[:10])
+print(list(itf_clust_ids.values())[:10])

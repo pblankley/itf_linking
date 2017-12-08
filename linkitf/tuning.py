@@ -21,28 +21,6 @@ from matplotlib.colors import Normalize
 import util
 import os
 from clustering import train_clusters
-Observatories = MPC_library.Observatories
-
-ObservatoryXYZ = Observatories.ObservatoryXYZ
-
-# Do the training run
-# print('Starting training run:')
-# for i,pix in enumerate(range(hp.nside2npix(nside))):
-#     # Percent complete
-#     out = i * 1. / len(range(hp.nside2npix(nside))) * 100
-#     sys.stdout.write("\r%d%%" % out)
-#     sys.stdout.flush()
-#
-#     pix_runs[pix] = find_clusters([pix], infilename, util.lunation_center(n), g_gdots=g_gdots, rtype='train')
-#
-# sys.stdout.write("\r%d%%" % 100)
-# print('\n')
-# #
-# # # Save the results as a pickle
-# with open(pickle_filename, 'wb') as handle:
-#     pickle.dump(pix_runs, handle, protocol=pickle.HIGHEST_PROTOCOL)
-# print('Different dt values:',*list(pix_runs[0].keys()))
-
 
 # GLOBALS
 nside=8
@@ -55,7 +33,7 @@ g_gdots = [(x,y) for x in gs for y in gdots]
 # moons = [-11, -14, -17, -20, -23]
 def tune(moons, nside, home_dir, g_gdots=g_gdots, dts=np.arange(5, 30, 5),
         radii=np.arange(0.0001, 0.0100, 0.0001), mincount=3):
-    """ tuning docs"""
+    """ moons is a list of values of your choosing between -825 to 10, tuning docs"""
     abs_home_dir = os.path.abspath(home_dir)
 
     # Looping over five lunation centers, separated by 3 months each
@@ -67,16 +45,9 @@ def tune(moons, nside, home_dir, g_gdots=g_gdots, dts=np.arange(5, 30, 5),
         pickle_filename = infilename.rstrip('trans') + 'train.pickle' # removed _v2 after train.
 
         for i,pix in enumerate(range(hp.nside2npix(nside))):
-            # Percent complete
-            # out = i * 1. / len(range(hp.nside2npix(nside))) * 100
-            # sys.stdout.write("\r%d%%" % out)
-            # sys.stdout.flush()
-
             # Do the training run
             pix_runs[pix] = train_clusters([pix], infilename, lunation_center(n), \
                                             g_gdots=g_gdots,dts=dts,radii=radii, mincount=mincount)
-
-        # sys.stdout.write("\r%d%%" % 100)
 
         # Write the output to a pickle
         with open(pickle_filename, 'wb') as handle:
