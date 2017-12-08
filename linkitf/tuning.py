@@ -19,7 +19,8 @@ from operator import add
 import matplotlib.cm as cm
 from matplotlib.colors import Normalize
 import util
-
+import os
+from clustering import train_clusters
 Observatories = MPC_library.Observatories
 
 ObservatoryXYZ = Observatories.ObservatoryXYZ
@@ -52,51 +53,53 @@ gdots = [-0.004, -0.002, 0.0, 0.002, 0.004]
 g_gdots = [(x,y) for x in gs for y in gdots]
 
 # moons = [-11, -14, -17, -20, -23]
-def tune(moons):
+def tune(moons, nside, home_dir, g_gdots=g_gdots, dts=np.arange(5, 30, 5),
+        radii=np.arange(0.0001, 0.0100, 0.0001), mincount=3):
+    """ tuning docs"""
+    abs_home_dir = os.path.abspath(home_dir)
+
     # Looping over five lunation centers, separated by 3 months each
     for i,n in enumerate(moons):
-        print('\n','{0}/{1}'.format(i,len(moons)),'\n')
+        # print('\n','{0}/{1}'.format(i,len(moons)),'\n')
+        lunation = util.lunation_center(n)
         pix_runs = {}
-        infilename='data/UnnObs_Training_1_line_A_%.1lf_pm15.0_r2.5.trans' % (lunation_center(n))
-        pickle_filename = infilename.rstrip('trans') + 'train.v2_pickle'
+        infilename=os.path.join(abs_home_dir, 'UnnObs_Training_1_line_A_%.1lf_pm15.0_r2.5.trans' % (lunation))
+        pickle_filename = infilename.rstrip('trans') + 'train.pickle' # removed _v2 after train.
 
         for i,pix in enumerate(range(hp.nside2npix(nside))):
             # Percent complete
-            out = i * 1. / len(range(hp.nside2npix(nside))) * 100
-            sys.stdout.write("\r%d%%" % out)
-            sys.stdout.flush()
+            # out = i * 1. / len(range(hp.nside2npix(nside))) * 100
+            # sys.stdout.write("\r%d%%" % out)
+            # sys.stdout.flush()
 
             # Do the training run
-            pix_runs[pix] = util.do_training_run([pix], infilename, lunation_center(n), g_gdots=g_gdots)
-        sys.stdout.write("\r%d%%" % 100)
+            pix_runs[pix] = train_clusters([pix], infilename, lunation_center(n), \
+                                            g_gdots=g_gdots,dts=dts,radii=radii, mincount=mincount)
+
+        # sys.stdout.write("\r%d%%" % 100)
 
         # Write the output to a pickle
         with open(pickle_filename, 'wb') as handle:
             pickle.dump(pix_runs, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     print('\n')
-    # Do the training run
-    print('Starting training run:')
-    for i,pix in enumerate(range(hp.nside2npix(nside))):
-        # Percent complete
-        out = i * 1. / len(range(hp.nside2npix(nside))) * 100
-        sys.stdout.write("\r%d%%" % out)
-        sys.stdout.flush()
-
-        pix_runs[pix] = util.do_training_run([pix], infilename, util.lunation_center(n), g_gdots=g_gdots)
-
-    sys.stdout.write("\r%d%%" % out)
 
     print('Find the best velocity / position scaling, our dt value.')
 
-    for n in moons:
-        infilename='data/UnnObs_Training_1_line_A_%.1lf_pm15.0_r2.5.trans' % (lunation_center(n))
-        pickle_filename = infilename.rstrip('trans') + 'v2_pickle'
-        dt=15.
-        with open(pickle_filename, 'rb') as handle:
-            pix_runs = pickle.load(handle)
+def plot_tune_results(moons, home_dir):
+    """ only run after you have already run tune"""
+    abs_home_dir = os.path.abspath(home_dir)
 
-            # Should save these results in files
+    for n in moons:
+        infilename=os.path.join(abs_home_dir, 'UnnObs_Training_1_line_A_%.1lf_pm15.0_r2.5.trans' % (util.lunation_center(n)))
+        pickle_filename = infilename.rstrip('trans') + 'train.pickle'
+
+        with open(pickle_filename, 'rb') as handle:
+            try:
+                pix_runs = pickle.load(handle)
+            except FileNotFoundError:
+                raise FileNotFoundError('Cannot find this file. Hint: make sure you have run the tune() function first!')
+
             true_count_dict, mergedCounter_dict, mergedTime_dict=accessible_clusters(list(pix_runs.keys()), infilename=infilename)
             true_count=sum(true_count_dict.values())
 
@@ -104,25 +107,23 @@ def tune(moons):
             visual.number_errors_plot(pix_runs)
             visual.auc_plot(pix_runs,true_count)
 
-    print("Based on these plots and Matt's subject matter knowledge, we choose dt to be 15.")
+def find_cluster_radius(moons, home_dir, dt, max_tol=1e-3):
+    """ docs"""
+    abs_home_dir = os.path.abspath(home_dir)
 
-    print('Now that we have dt=15, lets calculate the best cluster radius.')
+    print('Now that we have set dt={}, lets calculate the best cluster radius.'.format(dt))
 
-    error_rate_limit=1e-3
     training_dict={}
     for n in moons:
-        infilename='data/UnnObs_Training_1_line_A_%.1lf_pm15.0_r2.5.trans' % (lunation_center(n))
-        pickle_filename = infilename.rstrip('trans') + 'v2_pickle'
-        dt=15.
+        infilename=os.path.join(abs_home_dir, 'UnnObs_Training_1_line_A_%.1lf_pm15.0_r2.5.trans' % (util.lunation_center(n)))
+        pickle_filename = infilename.rstrip('trans') + 'train.pickle'
+
         with open(pickle_filename, 'rb') as handle:
             pix_runs = pickle.load(handle)
 
-            # Should save these results in files
             true_count_dict, mergedCounter_dict, mergedTime_dict=accessible_clusters(list(pix_runs.keys()), infilename=infilename)
             true_count=sum(true_count_dict.values())
-            true_count
 
-            print(n)
             for i in range(99):
                 errs=0
                 clusts=0
@@ -135,7 +136,7 @@ def tune(moons):
                     errs += nerrors
                     clusts += nclusters
                     trues += ntrue
-                if float(errs)/trues<error_rate_limit:
+                if float(errs)/trues < max_tol:
                     print(i, pix_runs[pixels[pix]][dt][0][i], errs, clusts, trues)
                 else:
                     training_dict[n] = pix_runs[pixels[pix]][dt][0][i], errs, clusts, trues
@@ -143,4 +144,4 @@ def tune(moons):
 
     cluster_radius = np.mean([v[0] for k, v in training_dict.items()])
 
-    print('The best cluster radius is:',cluster_radius)
+    return cluster_radius

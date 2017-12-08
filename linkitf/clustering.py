@@ -278,7 +278,7 @@ gdots = [-0.004, -0.003, -0.002, -0.001, 0.0, 0.001, 0.002, 0.003, 0.004]
 g_gdots = [(x,y) for x in gs for y in gdots]
 
 def train_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
-                    dts=15, radii=0.00124,
+                    dts=np.arange(5, 30, 5), radii=np.arange(0.0001, 0.0100, 0.0001),
                     cluster_sky_function=cluster_sky_regions, mincount=3):
     """ training docs"""
     master = cluster_sky_function(g_gdots, pixels, t_ref, infilename)
@@ -299,6 +299,7 @@ def train_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
             rates_dict[dt_val, rad_val] = cluster_counter.keys(), errs
 
     return _rates_to_results(rates_dict, dt)
+
 
 def test_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
                     dt=15, rad=0.00124,

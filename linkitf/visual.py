@@ -19,7 +19,19 @@ import matplotlib.cm as cm
 import matplotlib.colors as mlc
 
 
-def number_clusters_plot(pix_runs,true_count):
+def number_clusters_plot(pix_runs,true_count,outpath=''):
+    """ This function plots the number of clusters we find vs the
+    cluster radius we define.  It is used as a visual for training.
+    -------
+    Args: pix_runs; the result of looping over various healpy pixel values
+            in training and putting them in a dictionary.  To learn more
+            about this data structure look at the docs for tuning.
+          true_count; int, the true number of clusters in training.
+            Get this value by summing up the values of true_count_dict from
+            "accessible_clusters.
+    -------
+    Returns: None; plots the graph.
+    """"
     for dt in np.arange(5, 30, 5):
         pixels=list(pix_runs.keys())
         ds = pix_runs[pixels[0]][dt][0]
@@ -35,14 +47,23 @@ def number_clusters_plot(pix_runs,true_count):
     plt.axhline(true_count, ls='dashed')
     plt.xlabel('d (cluster radius)')
     plt.ylabel('N clusters')
-    #plt.text(0.005, 400, r'$\gamma=0.4$', fontsize=15)
     plt.legend()
     plt.title('Number of clusters by cluster radius.')
-    plt.savefig('demo_data/nclusters_demo')
+    if outpath != '':
+        plt.savefig(outpath)
     plt.show()
 
 
-def number_errors_plot(pix_runs):
+def number_errors_plot(pix_runs,outpath=''):
+    """ This function plots the number of errors we have vs the
+    cluster radius we define.  It is used as a visual for training.
+    -------
+    Args: pix_runs; the result of looping over various healpy pixel values
+            in training and putting them in a dictionary.  To learn more
+            about this data structure look at the docs for tuning.
+    -------
+    Returns: None; plots the graph.
+    """"
     for dt in np.arange(5, 30, 5):
         pixels=list(pix_runs.keys())
         ds = pix_runs[pixels[0]][dt][0]
@@ -53,12 +74,6 @@ def number_errors_plot(pix_runs):
             nerrors = list(map(add, nerrors, pix_runs[pix][dt][2]))
         nclusters=np.array(nclusters)
         nerrors=np.array(nerrors)
-        '''
-        if dt==50:
-            for d, nc, ne in zip(ds, nclusters, nerrors):
-                print(d, nc, ne)
-        '''
-
 
         plt.plot(ds, nerrors, label=dt)
 
@@ -69,11 +84,26 @@ def number_errors_plot(pix_runs):
     plt.text(0.0005, 1000, r'$\gamma=0.4$', fontsize=15)
     plt.legend()
     plt.title('Number of errors by cluster radius')
-    plt.savefig('demo_data/nerrors_demo')
+    if outpath != '':
+        plt.savefig(outpath)
     plt.show()
 
 
-def auc_plot(pix_runs,true_count):
+def auc_plot(pix_runs,true_count,outpath=''):
+    """ This function plots the number of errors we have as a percentage
+    of the total true clusters vs the number of clusters we find as a
+    percentage of the total true clusters. This approximates the AUC measure.
+    It is used as a visual for training.
+    -------
+    Args: pix_runs; the result of looping over various healpy pixel values
+            in training and putting them in a dictionary.  To learn more
+            about this data structure look at the docs for tuning.
+          true_count; int, the true number of clusters in training.
+            Get this value by summing up the values of true_count_dict from
+            "accessible_clusters.
+    -------
+    Returns: None; plots the graph.
+    """"
     for dt in np.arange(5, 30, 5):
         pixels=list(pix_runs.keys())
         ds = pix_runs[pixels[0]][dt][0]
@@ -92,9 +122,9 @@ def auc_plot(pix_runs,true_count):
     plt.xlabel('Error rate')
     plt.ylabel('Fraction complete')
     plt.text(0.05, 0.2, r'$\gamma=0.4$', fontsize=15)
-    #plt.legend()
     plt.title('AUC-proxy plot')
-    plt.savefig('demo_data/AUC_demo')
+    if outpath != '':
+        plt.savefig(outpath)
     plt.show()
 
 def make_figure(filename,cluster=False,outpath=''):
@@ -111,9 +141,6 @@ def make_figure(filename,cluster=False,outpath=''):
         dts.append(float(dt))
 
     fig=plt.figure(figsize=(18, 16))
-
-    #norm = mlc.Normalize()
-    #norm.autoscale(colors)
 
     colormap = cm.inferno
     if cluster:

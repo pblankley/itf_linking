@@ -25,24 +25,26 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 def clean_itf_data(path):
     itf_path = os.path.abspath(path)
     home_dir = os.path.dirname(itf_path)
-
-    cl.split_MPC_file(itf_path)
-
-    _txt_to_mpc_after_split(itf_path, home_dir)
-
+    print(itf_path)
+    print(home_dir)
+    # cl.split_MPC_file(itf_path)
+    #
+    # _txt_to_mpc_after_split(itf_path, home_dir)
+    #
     mpc_path = os.path.join(home_dir,'itf_new_1_line_ec.mpc')
-
-    tracklets, tracklets_jd_dict, sortedTracklets = cl.get_sorted_tracklets(mpc_path)
-
-
-    cl.separate_time_windows(tracklets, sortedTracklets, tracklets_jd_dict, \
-                            file_stem=mpc_path, dt=15.)
-
-    cl.separate_time_windows(tracklets, sortedTracklets, tracklets_jd_dict, \
-                            file_stem=itf_path, dt=15., suff='.txt')
-
-    for n in range(-825,14):
-        cl.index_positions(n, lambda t: 2.5, file_stem=mpc_path, dt=15.)
+    print(mpc_path)
+    #
+    # tracklets, tracklets_jd_dict, sortedTracklets = cl.get_sorted_tracklets(mpc_path)
+    #
+    #
+    # cl.separate_time_windows(tracklets, sortedTracklets, tracklets_jd_dict, \
+    #                         file_stem=mpc_path, dt=15.)
+    #
+    # cl.separate_time_windows(tracklets, sortedTracklets, tracklets_jd_dict, \
+    #                         file_stem=itf_path, dt=15., suff='.txt')
+    #
+    # for n in range(-825,14):
+    #     cl.index_positions(n, lambda t: 2.5, file_stem=mpc_path, dt=15.)
 
     return
 

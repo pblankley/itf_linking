@@ -31,6 +31,7 @@ def lunation_center(n, tref=2457722.0125, p=29.53055):
     return tp
 
 def equatorial_to_ecliptic(v,rot_mat=MPC_library.rotate_matrix(-MPC_library.Constants.ecl)):
+    """ convert equatorial plane x,y,z to eliptic x,y,z """
     return np.dot(rot_mat,v.reshape(-1,1)).flatten()
 
 def xyz_to_proj_matrix(r_ref):
@@ -51,12 +52,15 @@ def xyz_to_proj_matrix(r_ref):
     return mat
 
 def make_histogram(mergedCounter):
+    """ helper function for processing of merged counter dict from
+    accessible_clusters function"""
     hist_dict=defaultdict(list)
     for k, v in mergedCounter.items():
         hist_dict[v].append(k)
     return hist_dict
 
 def number_of_occurances(mergedCounter_dict, nside):
+    """ counts the number of occurances of clusters of each size"""
     num_occ=Counter()
     for pix in range(hp.nside2npix(nside)):
         hist=make_histogram(mergedCounter_dict[pix])
@@ -65,6 +69,15 @@ def number_of_occurances(mergedCounter_dict, nside):
     return num_occ
 
 def get_hpdict(infilename):
+    """ Takes in a .trans file and returns the related healpix dictionary.
+    We get the healpix number from the last column of the file and make a
+    key, value pair where the healpix number of the key and the line is the
+    value.
+    -------
+    Args: str, filename to the .trans file
+    -------
+    Returns: dict
+    """
     hp_dict = defaultdict(list)
     with open(infilename) as file:
         for line in file:
@@ -74,8 +87,9 @@ def get_hpdict(infilename):
             hp_dict[pix].append(line)
     return hp_dict
 
-#='data/UnnObs_Training_1_line_A.mpc'
+
 def get_original_tracklets_dict(filename):
+    """ orig default was ='data/UnnObs_Training_1_line_A.mpc'"""
     tracklets = defaultdict(list)
     with open(filename) as infile:
         for i, line in enumerate(infile):
@@ -84,14 +98,16 @@ def get_original_tracklets_dict(filename):
                 tracklets[desig].append(i)
     return tracklets
 
-# ='data/UnnObs_Training_1_line_A.txt'
+
 def get_original_observation_array(filename):
+    """ orig default was ='data/UnnObs_Training_1_line_A.txt' """
     tracklets = defaultdict(list)
     with open(filename) as infile:
         data = infile.readlines()
     return data
 
 def get_observations(cluster_key, tracklets_dict, observation_array, sep='|'):
+    """ 2nd and 3rd args are from the above functions"""
     array=[]
     for key in cluster_key.split(sep):
         indices = tracklets_dict[key]
