@@ -29,7 +29,7 @@ ObservatoryXYZ = Observatories.ObservatoryXYZ
 def fit_tracklet_tst(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
     """ coupled least squares fit for the parameters holding gamma constant.
 
-    NOTE: gamma dot input is not needed and is left for method consistency 
+    NOTE: gamma dot input is not needed and is left for method consistency
 
     """
     # get some vals
@@ -51,6 +51,90 @@ def fit_tracklet_tst(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
 
     return (sol, t_emit[0])
 
+def fit_tracklet_grav(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun, eps2=1e-16):
+    """ Here's a more sophisticated version. """
+
+    t_emit = [(obs[0]-obs[1]-t_ref) for obs in v]
+
+    # We will approximate g_x(t), g_y(t), and g_z(t)
+    # using a Taylor expansion.
+    # The first two terms are zero by design.
+    #
+    # Given alpha, beta, gamma,
+    # we would have r_0^2 = (alpha^2 + beta^2 + 1)*z_0^2
+    # r^2 = (alpha^2 + beta^2 + 1)/gamma^2 ~ 1/gamma^2
+    # g_x(t) ~ -0.5*GM*x_0*t^2/r^3 + 1/6*jerk_x*t*t*t
+    # g_y(t) ~ -0.5*GM*y_0*t^2/r^3 + 1/6*jerk_y*t*t*t
+    # g_z(t) ~ -0.5*GM*z_0*t^2/r^3 + 1/6*jerk_z*t*t*t
+    #
+    # We do not have alpha and beta initially,
+    # but we assert gamma.
+    #
+    # We set alpha=beta=0 initially, least squares solve
+    # the tracklets and obtain alpha, alpha-dot, beta,
+    # and beta-dot.
+    #
+    # Then we use those values to estimate g_x,
+    # g_y, and g_z for the next iteration.
+    #
+    # The process converges when alpha, alpha-dot,
+    # beta, beta-dot do not change significantly.
+    #
+    # We could also do this same process with a
+    # Kepler-stepper or a full n-body integration.
+
+    alpha = beta = 0.0
+    alpha_dot = beta_dot = 0.0
+    cx, cy = 1.0, 1.0
+    mx, my = 0.0, 0.0
+
+    while(((cx-alpha)*(cx-alpha) + (cy-beta)*(cy-beta))>eps2):
+
+        alpha, beta = cx, cy
+        alpha_dot, beta_dot = mx, my
+
+        r2 = (alpha*alpha + beta*beta + 1.0)/(g*g)
+        r3 = r2*np.sqrt(r2)
+        r5 = r2*r3
+
+        x0 = alpha/g
+        y0 = beta/g
+        z0 = 1.0/g
+
+        vx0 = alpha_dot/g
+        vy0 = beta_dot/g
+        vz0 = gdot/g
+
+        # An alternative to the Taylor expansion is to
+        # to kepler step from
+        # x0, y0, z0 and vx0, vy0, vz0 at time 0
+        # to those at the times of each observation
+        # in the tracklet.  With that there will be no
+        # issue of convergence.
+        # Then simply subtract off the linear motion
+        # to give the gravitational perturbation.
+
+        rrdot = x0*vx0 + y0*vy0 + z0*vz0
+
+        acc_x = -GM*x0/r3
+        acc_y = -GM*y0/r3
+        acc_z = -GM*z0/r3
+
+        jerk_x = -GM/r5*(r2*vx0 - 3.0*rrdot*x0)
+        jerk_y = -GM/r5*(r2*vy0 - 3.0*rrdot*y0)
+        jerk_z = -GM/r5*(r2*vz0 - 3.0*rrdot*z0)
+
+        fac =[(1.0 + gdot*t + 0.5*g*acc_z*t*t + (1./6.0)*g*jerk_z*t*t*t - g*obs[7]) for obs, t in zip(v, t_emit)]
+
+        A = np.vstack([t_emit, np.ones(len(t_emit))]).T
+
+        x = [obs[2]*f + obs[5]*g - 0.5*g*acc_x*t*t - (1./6.0)*g*jerk_x*t*t*t for obs, f, t in zip(v, fac, t_emit)]
+        mx, cx = np.linalg.lstsq(A, x)[0]
+
+        y = [obs[3]*f + obs[6]*g - 0.5*g*acc_y*t*t - (1./6.0)*g*jerk_y*t*t*t for obs, f, t in zip(v, fac, t_emit)]
+        my, cy = np.linalg.lstsq(A, y)[0]
+
+    return (cx, mx, cy, my, t_emit[0])
 
 def fit_tracklet(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
     """Here's a version that incorporates radial gravitational
