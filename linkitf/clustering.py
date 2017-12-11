@@ -1,6 +1,7 @@
 # Imports
 import numpy as np
 import scipy.interpolate
+from scipy.stats import chisquare
 import matplotlib.gridspec as gridspec
 import matplotlib as mpl
 import matplotlib.cm as cm
@@ -24,6 +25,34 @@ import util
 Observatories = MPC_library.Observatories
 
 ObservatoryXYZ = Observatories.ObservatoryXYZ
+
+def chi_sq_compare(t_ref, g, gdot, tracklets,  fit_tracklet_func=fit_tracklet, GM=MPC_library.Constants.GMsun):
+    """ Here we want to take in the previous a, adot, b, bdot and compare those
+    values via chi sq with the orbit calculated by using all the obs in the
+    clustered tracklets.  The input will be the reference time, g, gdot and a
+    list of lists where the inner list is the observations in a tracklet
+    and the meta list is the list of tracklets in our cluster.
+    """
+    # Get the fitted a,adot,b,bdot values on a per-tracklet level
+    individual_fits = []
+    for tracklet in tracklets:
+        individual_fits.append(np.array(fit_tracklet_func(t_ref, g, gdot, tracklet)[:4]))
+
+    # Get the fitted values over all observations in the cluster
+    all_obs = [obs for track in tracklets for obs in track]
+    meta_fit = np.array(fit_tracklet_func(t_ref, g, gdot, all_obs)[:4])
+
+    validated_cluster = []
+    for tracklet, ifit in zip(tracklets, individual_fits):
+        # We can do this because we expect the a,adot,b,bdot to have the same scale, right?
+        chi2stat, pval = chisquare(ifit,meta_fit)
+        if pval>0.05:
+            validated_cluster.append(tracklet)
+
+    # Now return a list of lists of tracklets we validated are correctly clustered.
+    # the second return value is a bool stating if all the tracklets we initially had were in the valid cluster
+    return validated_cluster, len(validated_cluster)==len(tracklets)
+
 
 # results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
 def fit_tracklet_tst(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
