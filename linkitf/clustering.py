@@ -2,6 +2,7 @@
 import numpy as np
 import scipy.interpolate
 from scipy.stats import chisquare
+from scipy.optimize import curve_fit
 import matplotlib.gridspec as gridspec
 import matplotlib as mpl
 import matplotlib.cm as cm
@@ -26,6 +27,79 @@ Observatories = MPC_library.Observatories
 
 ObservatoryXYZ = Observatories.ObservatoryXYZ
 
+def fit_tracklet(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
+    """Here's a version that incorporates radial gravitational
+    acceleration. """
+
+    t_emit = [(obs[0]-obs[1]-t_ref) for obs in v]
+    acc_z = -GM*g*g
+    fac =[(1.0 + gdot*t + 0.5*g*acc_z*t*t - g*obs[7]) for obs, t in zip(v, t_emit)]
+
+    A = np.vstack([t_emit, np.ones(len(t_emit))]).T
+
+    x = [obs[2]*f + obs[5]*g for obs, f in zip(v, fac)]
+    mx, cx = np.linalg.lstsq(A, x)[0]
+
+    y = [obs[3]*f + obs[6]*g for obs, f in zip(v, fac)]
+    my, cy = np.linalg.lstsq(A, y)[0]
+        # a     adot b  bdot  dt (change in time)
+    return (cx, mx, cy, my, t_emit[0])
+
+# results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
+def full_fit_trkl(t_ref, g_init, gdot_init,  all_obs, GM=MPC_library.Constants.GMsun):
+    """ This function needs to take in all the observations over the cluster of
+    tracklets (min of 3 tracklets), and return the a,adot,b,bdot,g and gdot.
+
+    We will then use the resulting gamma and gamma dot to fit the tracklets
+    individualally, and compare with the chi sq."""
+    # theta_x, theta_y, theta_z, xe, ye, ze, t_emit
+    dependent = np.array([np.array((obs[2],obs[3])) for obs in all_obs])
+    independent = np.array([np.array((obs[5],obs[6],obs[7],obs[0]-obs[1]-t_ref)) for obs in all_obs])
+
+    p0_guess = list(fit_tracklet(t_ref, g_init, gdot_init, all_obs)[:4])
+    p0_guess.extend([g_init,gdot_init])
+
+    print('init',p0_guess)
+
+    def f(obs,a,adot,b,bdot,g,gdot):
+        """ """
+        print('obs',obs.shape)
+        # print(np.split(obs,4,axis=1))
+        xe,ye,ze,t_emit = np.split(obs,4,axis=1)
+        x = (a + adot*t_emit - g*xe)/(1 + gdot*t_emit - g*ze)
+        y = (b + bdot*t_emit - g*ye)/(1 + gdot*t_emit - g*ze)
+        res = np.concatenate([x,y],axis=1)
+        # print(x,y)
+        print(dependent.shape)
+        print(res.shape)
+        print(res[:,0].reshape(-1,1))
+        print(res[:,0])
+        return x,y
+
+    print(independent.shape,dependent.shape)
+    params, pcov = curve_fit(f,xdata=independent,ydata=dependent,p0=p0_guess,method='trf')
+    print('init',p0_guess)
+    print('params',params)
+    print('cov',pcov)
+    print('reduced chi sq?',sum((f(independent,*params)-dependent)**2)/(len(all_obs)-6.0))
+    return params
+
+def test_things(infilename, pixels, nside, n, angDeg=5.5, g=0.4, gdot=0.0):
+    hp_dict = util.get_hpdict(infilename)
+
+    for i in pixels:
+        vec = hp.pix2vec(nside, i, nest=True)
+        neighbors = hp.query_disc(nside, vec, angDeg*np.pi/180., inclusive=True, nest=True)
+        lines = []
+        for pix in neighbors:
+            for line in hp_dict[pix]:
+                lines.append(line)
+        if len(lines) > 0:
+            res_dict = get_tracklet_obs(vec,lines)
+            return res_dict
+
+            # transform_to_arrows(util.lunation_center(n), [(g, gdot)], vec, lines, outfilename)
+
 def chi_sq_compare(t_ref, g, gdot, tracklets,  fit_tracklet_func=fit_tracklet, GM=MPC_library.Constants.GMsun):
     """ Here we want to take in the previous a, adot, b, bdot and compare those
     values via chi sq with the orbit calculated by using all the obs in the
@@ -36,11 +110,11 @@ def chi_sq_compare(t_ref, g, gdot, tracklets,  fit_tracklet_func=fit_tracklet, G
     # Get the fitted a,adot,b,bdot values on a per-tracklet level
     individual_fits = []
     for tracklet in tracklets:
-        individual_fits.append(np.array(fit_tracklet_func(t_ref, g, gdot, tracklet)[:4]))
+        individual_fits.append(np.array(list(fit_tracklet_func(t_ref, g, gdot, tracklet))[:4]+[g,gdot]))
 
     # Get the fitted values over all observations in the cluster
     all_obs = [obs for track in tracklets for obs in track]
-    meta_fit = np.array(fit_tracklet_func(t_ref, g, gdot, all_obs)[:4])
+    meta_fit = np.array(full_fit_trkl(t_ref, g, gdot, all_obs))
 
     validated_cluster = []
     for tracklet, ifit in zip(tracklets, individual_fits):
@@ -165,24 +239,6 @@ def fit_tracklet_grav(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun, eps2=1e
 
     return (cx, mx, cy, my, t_emit[0])
 
-def fit_tracklet(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
-    """Here's a version that incorporates radial gravitational
-    acceleration. """
-
-    t_emit = [(obs[0]-obs[1]-t_ref) for obs in v]
-    acc_z = -GM*g*g
-    fac =[(1.0 + gdot*t + 0.5*g*acc_z*t*t - g*obs[7]) for obs, t in zip(v, t_emit)]
-
-    A = np.vstack([t_emit, np.ones(len(t_emit))]).T
-
-    x = [obs[2]*f + obs[5]*g for obs, f in zip(v, fac)]
-    mx, cx = np.linalg.lstsq(A, x)[0]
-
-    y = [obs[3]*f + obs[6]*g for obs, f in zip(v, fac)]
-    my, cy = np.linalg.lstsq(A, y)[0]
-        # a     adot b  bdot  dt (change in time)
-    return (cx, mx, cy, my, t_emit[0])
-
 
 def get_tracklet_obs(vec,lines):
     results_dict = defaultdict(list)
@@ -228,7 +284,8 @@ def get_tracklet_obs(vec,lines):
             dlt = ze/MPC_library.Constants.speed_of_light
 
             # Append the resulting data to a dictionary keye do trackletID.
-            results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
+            # 12/11 added strip here, could propagate errors forward
+            results_dict[trackletID.strip()].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
 
     return results_dict
 
