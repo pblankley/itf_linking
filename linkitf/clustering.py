@@ -25,6 +25,33 @@ Observatories = MPC_library.Observatories
 
 ObservatoryXYZ = Observatories.ObservatoryXYZ
 
+# results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
+def fit_tracklet_tst(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
+    """ coupled least squares fit for the parameters holding gamma constant.
+
+    NOTE: gamma dot input is not needed and is left for method consistency 
+
+    """
+    # get some vals
+    t_emit = [(obs[0]-obs[1]-t_ref) for obs in v]
+    acc_z = -GM*g*g
+
+    # make the matrices from the given vector inputs
+    mx = np.array([np.array((1.0, t_emit, 0.0, 0.0, g*t_emit*obs[5])) for obs in v])
+    my = np.array([np.array((0.0, 0.0, 1.0, t_emit, g*t_emit*obs[6])) for obs in v])
+    theta_x = np.array([obs[2] for obs in v])
+    theta_y = np.array([obs[3] for obs in v])
+
+    # aggregate the matrices for the coupoled lstsq fit
+    combined_m = np.dot(mx.T,mx)+np.dot(my.T,my)
+    combined_res = np.dot(mx,theta_x) + np.dot(my,theta_y)
+
+    # solution in form: a adot, b, bdot, g_dot
+    sol = np.linalg.solve(combined_m, combined_res)
+
+    return (sol, t_emit[0])
+
+
 def fit_tracklet(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
     """Here's a version that incorporates radial gravitational
     acceleration. """
@@ -40,7 +67,7 @@ def fit_tracklet(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
 
     y = [obs[3]*f + obs[6]*g for obs, f in zip(v, fac)]
     my, cy = np.linalg.lstsq(A, y)[0]
-
+        # a     adot b  bdot  dt (change in time)
     return (cx, mx, cy, my, t_emit[0])
 
 
