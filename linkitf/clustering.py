@@ -22,6 +22,8 @@ import pickle
 from operator import add
 import matplotlib.cm as cm
 from matplotlib.colors import Normalize
+import matplotlib.colors as mlc
+import matplotlib.cm as cm
 import util
 
 Observatories = MPC_library.Observatories
@@ -59,23 +61,153 @@ def fit_tracklet(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
     return (cx, mx, cy, my, t_emit[0])
 
 
+# results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
+def kbo2d_linear(pin, obs, t_ref):
+    """Linearized version of the 2d projection of orbital position.  Only
+       leading-order terms for each parameter's derivative are given.
+       The derivative with respect to gdot is inserted here - note that
+       it is much smaller than the others, and is the only part of the
+       derivatives that has any dependence upon the incoming PBASIS.
+    """
+    jd_tdb, dlt, theta_x,theta_y,theta_z,xe,ye,ze = obs
+    a,adot,b,bdot,g,gdot = pin
+    t_emit = obs[0]-obs[1]-t_ref
+    #Account for light-travel time differentially to leading order
+    #by retarding KBO motion by z component of Earth's position.
+    #Note: ignoring acceleration here.
+    # t_emit = obs->obstime - ze/SPEED_OF_LIGHT;
+
+    x = a + adot*t_emit - g * xe
+    - gdot * (adot*t_emit*t_emit - g*xe*t_emit)
+    y = b + bdot*t_emit - g * ye
+    - gdot * (bdot*t_emit*t_emit - g*ye*t_emit)
+
+    dx=np.zeros(6)
+    dy=np.zeros(6)
+
+    dx[1] = dy[3] = 1.
+    dx[2] = dy[4] = t_emit
+    dx[5] = -xe
+    dy[5] = -ye
+    dx[6] = -(adot*t_emit*t_emit - g*xe*t_emit)
+    dy[6] = -(bdot*t_emit*t_emit - g*ye*t_emit)
+
+    return x,y,dx,dy
+
+
+def prelim_fit(obsarray,pout):
+    """Take a set of observations and make a preliminary fit using the
+     linear model of the orbit.  Then fill in zero for gdot, and return
+     the fit and an uncertainty matrix.  The gdot term of uncertainty
+     matrix is set to a nominal value.
+     Note covar is assumed to be 6x6 1-indexed matrix a la Numerical Recipes.
+    """
+    beta=np.zeros(6)
+    alpha=np.zeros((6,6))
+
+    # Collect the requisite sums
+    for ob in obsarray:
+        # not sure why the original had this? if(obsarray[i].reject==0)
+
+        wtx = 1./ob.dthetax
+        wtx *= wtx
+        wty = 1./ob.dthetay
+        wty *= wty
+
+        x,y,dx,dy = kbo2d_linear(pout,ob,t_ref);
+        """Note that the dx[6] and dy[6] terms will only make
+        even the least sense if the g and adot were set to
+        some sensible value beforehand.
+        """
+
+        for j in range(6):
+          beta[j] += ob.thetax * dx[j] * wtx;
+          beta[j] += ob.thetay * dy[j] * wty;
+          for k in range(j+1):
+              alpha[j][k] += dx[j]*dx[k]*wtx;
+              alpha[j][k] += dy[j]*dy[k]*wty;
+
+    """ Symmetrize and invert the alpha matrix to give covar.  Note
+    that I'm only going to bother with the first 5 params.
+    """
+    for i in range(5):
+      for j in range(i):
+          alpha[j][i]=alpha[i][j];
+
+    covar = np.linalg.inv(alpha)
+    soln = np.dot(covar, beta)
+
+    pres = np.append(soln,0.0)
+
+    # Set the gdot parts of the covariance matrix to nominal values
+    for i in range(6):
+        covar[i][5]=covar[5][i]=0.;
+    covar[5][5]=0.1*TPI*TPI*g**3
+
+    return pres, covar
+
+
 def chisq(opt_result,args):
     """ calc the chi sq for the result of the minimization function.
     NOTE: probably wrong... """
-    chi,var_chi=0.0,0.2/205625. # in radians (from arcseconds)
+    chi,var_chi=0.0,(0.2/205625.)**2 # in radians (from arcseconds)
     a,adot,b,bdot,g,gdot = opt_result
-
+    chi_arr = []
     for arg in args:
         xe, ye, ze, t_emit, theta_x, theta_y = arg
         tx = (a + adot*t_emit - g*xe)/(1 + gdot*t_emit - g*ze)
         ty = (b + bdot*t_emit - g*ye)/(1 + gdot*t_emit - g*ze)
-        numerator_chi = (theta_x-tx)**2 + (theta_y-ty)**2
-        chi += numerator_chi/(var_chi) # not sure about this
+        chi += (theta_x-tx)**2/var_chi + (theta_y-ty)**2/var_chi
+        chi_arr.append((theta_x-tx)**2/var_chi + (theta_y-ty)**2/var_chi)
 
-    return chi
+    return chi,chi_arr
+
+def visualize(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gdot_init=0.0):
+    a,adot,b,bdot,colors = [],[],[],[],[]
+    arrows = []
+    cluster_tracklet_level = []
+
+    for k,v in agg_dict.items():
+        if k in idxs:
+            cluster_tracklet_level.append(v)
+
+    if len(params_dict)!= len(cluster_tracklet_level):
+        raise ValueError('the length of the cluster params {0} is different from the number of ids \
+                            passed for agg_dict {1}'.format(len(params_dict),len(cluster_tracklet_level)))
+    for k,v in params_dict.items():
+        # k represents cluster id and v represents the related a adot,b,bdot,g,g_dot
+        arrows.append(list(v[:4])+[1000])
+
+    for clust_trkls,cparams in zip(cluster_tracklet_level,params_dict.values()):
+        g_cl,gdot_cl = cparams[-2:]
+        for trkl in clust_trkls:
+            obs_in_trkl = [i[1:] for i in trkl]
+            arrows.append(list(fit_tracklet(t_ref, g_cl, gdot_cl, obs_in_trkl)[:4])+[500])
+
+    for clust_trkls in cluster_tracklet_level:
+        for trkl in clust_trkls:
+            obs_in_trkl = [i[1:] for i in trkl]
+            arrows.append(list(fit_tracklet(t_ref, g_init, gdot_init, obs_in_trkl)[:4])+[100])
+    # print(arrows)
+    # print([a for a in arrows if a[-1]==10])
+    a,adot,b,bdot,colors = np.split(np.array(arrows),5,axis=1)
+
+    # colormap = mlc.ListedColormap (['grey','blue','red'])
+    colormap = cm.cool
+    fig,ax=plt.subplots(figsize=(18, 16))
+
+    Q = ax.quiver(a, b, adot, bdot, colors, cmap=colormap,scale=0.3, width=0.0003)
+    # ax.quiverkey(Q, X, Y, U, label,)
+
+    plt.xlim(-0.1, 0.1)
+    plt.ylim(-0.1, 0.1)
+    plt.xlabel('alpha')
+    plt.ylabel('beta')
+    plt.savefig('arrows_with_orb_fit.pdf')
+    plt.show()
 
 
-def full_fit_t_loss(t_ref, g_init, gdot_init,  all_obs, GM=MPC_library.Constants.GMsun):
+def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, GM=MPC_library.Constants.GMsun):
     """ This function needs to take in all the observations over the cluster of
     tracklets (min of 3 tracklets), and return the a,adot,b,bdot,g and gdot.
 
@@ -93,12 +225,21 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  all_obs, GM=MPC_library.Constants
                 value of the loss function when completely minimized, and the third
                 value is the chisq statistic.
     """
-    # theta_x, theta_y, theta_z, xe, ye, ze, t_emit
-    dependent = np.array([np.array((obs[2],obs[3])) for obs in all_obs])
-    args = [(obs[5],obs[6],obs[7],obs[0]-obs[1]-t_ref,obs[2],obs[3]) for obs in all_obs]
+    # tracklet id, jd, dtl, theta_x, theta_y, theta_z, xe, ye, ze, t_emit
+    # dependent = np.array([np.array((obs[2],obs[3])) for obs in all_obs])
+    # for c,clust in agg_dict.items():
+    working_obs = [itm[1:] for ob in list_of_tracklets for itm in ob]
+    # working_obs = [i[1:] for i in a_obs]
+    t_ref_mean = sum(obs[0] for obs in working_obs)/len(working_obs)
+    # print('Avg reference time:',t_ref_mean)
+    args = [(obs[5],obs[6],obs[7],obs[0]-obs[1]-t_ref,obs[2],obs[3]) for obs in working_obs]
 
-    x0_guess = list(fit_tracklet(t_ref, g_init, gdot_init, all_obs)[:4])
-    x0_guess.extend([g_init,gdot_init])
+    # get the avg of the trackelt params
+    x0_guess = []
+    for trkl in list_of_tracklets:
+        obs_in_trkl = [i[1:] for i in trkl]
+        x0_guess.append(np.array(fit_tracklet(t_ref, g_init, gdot_init, obs_in_trkl)[:4]))
+    x0_guess = np.append(np.array(x0_guess).mean(axis=0), [g_init,gdot_init])
 
     def loss(arr):
         """ loss func: aggregate the errors from the loss and minimize this function
@@ -114,15 +255,15 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  all_obs, GM=MPC_library.Constants
 
         return loss
 
-    opt_out = minimize(loss,x0=np.array(x0_guess))
+    opt_out = minimize(loss,x0=np.array(x0_guess))#,method='L-BFGS-B')
 
     # calc chi sq
-    csq = chisq(opt_out.x,args)
+    csq,csq_arr = chisq(opt_out.x,args)
+
     # print('init',x0_guess)
     # print('diff',[abs(i-j) for i,j in zip(x0_guess,opt_out.x)])
     # print('everything',opt_out)
-    # print('reduced chi sq?',sum((f(independent,*params)-dependent)**2)/(len(all_obs)-6.0))
-    return opt_out.x, opt_out.fun, csq
+    return opt_out.x, opt_out.fun, csq,csq_arr
 
 # results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
 def fit_extend(infilename, clust_ids, pixels, nside, n, angDeg=5.5, gi=0.4, gdoti=0.0):
@@ -146,7 +287,7 @@ def nlin_fits(agg_dict, g_init, gdot_init, n):
     fit_dict,results = {},[]
     # k is the cluster id, v is the tracklets in the cluster id
     for k, v in agg_dict.items():
-        params, func_val, chisq = full_fit_t_loss(util.lunation_center(n), g, gdot, [obs trkl for v for obs in trkl])
+        params, func_val, chisq = full_fit_t_loss(util.lunation_center(n), g, gdot, [obs for trkl in v for obs in trkl])
         results.append(params)
         fit_dict[k] = params
     return fit_dict, results
