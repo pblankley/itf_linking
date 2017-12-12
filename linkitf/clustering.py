@@ -29,9 +29,21 @@ Observatories = MPC_library.Observatories
 ObservatoryXYZ = Observatories.ObservatoryXYZ
 
 def fit_tracklet(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
-    """Here's a version that incorporates radial gravitational
-    acceleration. """
-
+    """ This function used least squares to fit the a, adot and the b, bdot in
+    two seperate equations.  The equations are seperate and uncoupled because we
+    chose the gamma value (g) to be the value we set, and let gdot follow.
+    This follows the mathematical scheme from Bernstein et al (2000).
+    This version also incorporates radial gravitational acceleration.
+    ----------
+    Args: t_ref; the lunation center
+          g; float, the gamma value we assert.
+          gdot; float, the gamma dot value we assert.
+          v; the list of tuples, where each tuple is an observation and the
+                meta-list is a tracklet.
+    ----------
+    Returns: tuple, with (a, adot, b, bdot and t_emit) as the values.
+                These values are on the tracklet level.
+    """
     t_emit = [(obs[0]-obs[1]-t_ref) for obs in v]
     acc_z = -GM*g*g
     fac =[(1.0 + gdot*t + 0.5*g*acc_z*t*t - g*obs[7]) for obs, t in zip(v, t_emit)]
@@ -46,9 +58,21 @@ def fit_tracklet(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
         # a     adot b  bdot  dt (change in time)
     return (cx, mx, cy, my, t_emit[0])
 
-# def gravity(time,g,GM=MPC_library.Constants.GMsun):
-#     """ calculate the gravity in respect to a direction """
-#     #acc_z = -GM
+
+def chisq(opt_result,args):
+    """ calc the chi sq for the result of the minimization function.
+    NOTE: probably wrong... """
+    chi,var_chi=0.0,0.2/205625. # in radians (from arcseconds)
+    a,adot,b,bdot,g,gdot = opt_result
+
+    for arg in args:
+        xe, ye, ze, t_emit, theta_x, theta_y = arg
+        tx = (a + adot*t_emit - g*xe)/(1 + gdot*t_emit - g*ze)
+        ty = (b + bdot*t_emit - g*ye)/(1 + gdot*t_emit - g*ze)
+        numerator_chi = (theta_x-tx)**2 + (theta_y-ty)**2
+        chi += numerator_chi/(var_chi) # not sure about this
+
+    return chi
 
 
 def full_fit_t_loss(t_ref, g_init, gdot_init,  all_obs, GM=MPC_library.Constants.GMsun):
@@ -56,7 +80,19 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  all_obs, GM=MPC_library.Constants
     tracklets (min of 3 tracklets), and return the a,adot,b,bdot,g and gdot.
 
     We will then use the resulting gamma and gamma dot to fit the tracklets
-    individualally, and compare with the chi sq."""
+    individualally, and compare with the chi sq.
+    --------
+    Args: t_ref; lunation_center
+          g_init; out initial guess for g (the value we asserted before)
+          gdot_init; out initial guess for gdot (the value we asserted before)
+          all_obs; list of tuples, where each tuple is a observation and all the
+                    observations make up at minimum 3 tracklets in a cluster.
+    --------
+    Returns: tuple with (parms, function min, chisq) where the first element is
+                parameters calculated by the nonlinear fit, the second is the
+                value of the loss function when completely minimized, and the third
+                value is the chisq statistic.
+    """
     # theta_x, theta_y, theta_z, xe, ye, ze, t_emit
     dependent = np.array([np.array((obs[2],obs[3])) for obs in all_obs])
     args = [(obs[5],obs[6],obs[7],obs[0]-obs[1]-t_ref,obs[2],obs[3]) for obs in all_obs]
@@ -64,55 +100,85 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  all_obs, GM=MPC_library.Constants
     x0_guess = list(fit_tracklet(t_ref, g_init, gdot_init, all_obs)[:4])
     x0_guess.extend([g_init,gdot_init])
 
-    # print('init',x0_guess)
-
     def loss(arr):
-        """ loss func"""
-        # print('obs',obs.shape)
-        # print(np.split(obs,4,axis=1))
-        # xe,ye,ze,t_emit = np.split(obs,4,axis=1)
-        loss = 0.0
-        # print(type(arr))
-        # print('arr',arr)
+        """ loss func: aggregate the errors from the loss and minimize this function
+        Kind of nasty because it uses global args values, but it should work."""
+        loss= 0.0
         a, adot, b, bdot, g, gdot = arr
-        # print(a,adot,b,bdot,g,gdot)
+
         for arg in args:
-            # print(type(a))
-            # print('a',a)
             xe, ye, ze, t_emit, theta_x, theta_y = arg
-            # print(xe, ye, ze, t_emit, theta_x, theta_y)
-            # print(a,'+', adot,'*',t_emit, '-' ,g,'*',xe,'/',1, '+', 'gdot','*',t_emit, '-', g,'*',ze)
             tx = (a + adot*t_emit - g*xe)/(1 + gdot*t_emit - g*ze)
             ty = (b + bdot*t_emit - g*ye)/(1 + gdot*t_emit - g*ze)
-            # print('ttttxxss',tx,ty)
-            # print(theta_x,theta_y)
-            loss += (theta_x-tx)**2 + (theta_y-ty)**2
+            loss+= (theta_x-tx)**2 + (theta_y-ty)**2
 
-        # print(x,y)
-        # print(dependent.shape)
-        # print(res.shape)
-        # print(res[:,0].reshape(-1,1))
-        # print(res[:,0])
-        # print(type(loss))
-        # print(loss)
         return loss
 
-    # print(independent.shape,dependent.shape)
     opt_out = minimize(loss,x0=np.array(x0_guess))
-    print('init',x0_guess)
-    print('params',opt_out.x)
-    print('diff',[abs(i-j) for i,j in zip(x0_guess,opt_out.x)])
-    print('everything',opt_out)
+
+    # calc chi sq
+    csq = chisq(opt_out.x,args)
+    # print('init',x0_guess)
+    # print('diff',[abs(i-j) for i,j in zip(x0_guess,opt_out.x)])
+    # print('everything',opt_out)
     # print('reduced chi sq?',sum((f(independent,*params)-dependent)**2)/(len(all_obs)-6.0))
-    return opt_out.x
+    return opt_out.x, opt_out.fun, csq
+
+# results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
+def fit_extend(infilename, clust_ids, pixels, nside, n, angDeg=5.5, gi=0.4, gdoti=0.0):
+    """ Not a real this yet.. still in progress wrapper for doing the whole nlin fit process"""
+    res_dict = get_res_dict(infilename, pixels, nside, n, angDeg=angDeg, gi=g, gdoti=gdot)
+
+    for i in pixels:
+        agg_dict = defaultdict(list)
+        for k,v in clust_ids.items():
+            # k is the tracklet id, v is the cluster id
+            agg_dict[v].append(res_dict[i][k])
+        fit_dict, results = nlin_fits(agg_dict,g,gdot,n)
+        for k,v in fit_dict.items():
+            # k is the cluster id and v is the fitted 6 params
+            a,adot,b,bdot,g,gdot = v
+            """ I need to match the other values from res_dict with the
+            fitted cluster values here."""
+
+def nlin_fits(agg_dict, g_init, gdot_init, n):
+    """ helper for nlin fits"""
+    fit_dict,results = {},[]
+    # k is the cluster id, v is the tracklets in the cluster id
+    for k, v in agg_dict.items():
+        params, func_val, chisq = full_fit_t_loss(util.lunation_center(n), g, gdot, [obs trkl for v for obs in trkl])
+        results.append(params)
+        fit_dict[k] = params
+    return fit_dict, results
+#     for clust_id, arrows in fit_dict.items():
+#
+#         i = 0
+#         label_dict={}
+#         combined=[]
+#         for k, cx, mx, cy, my, t in arrows:
+#             label_dict[i] = k
+#             combined.append([cx, mx*dt, cy, my*dt])
+#             i +=1
+#         points=np.array(combined)
+#
+#         tree = scipy.spatial.cKDTree(points)
+#         matches = tree.query_ball_tree(tree, rad)
+#
+#         for j, match in enumerate(matches):
+#             if len(match)>=mincount:
+#                 cluster_list =[]
+#                 for idx in match:
+#                     tracklet_id = label_dict[idx].strip()
+#                     cluster_list.append(tracklet_id)
+#                     cluster_id_dict.update({tracklet_id: j})
+#                 cluster_key='|'.join(sorted(cluster_list))
+#                 cluster_counter.update({cluster_key: 1})
+#
+# return cluster_counter, cluster_id_dict
 
 # results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
 def full_fit_trkl(t_ref, g_init, gdot_init,  all_obs, GM=MPC_library.Constants.GMsun):
-    """ This function needs to take in all the observations over the cluster of
-    tracklets (min of 3 tracklets), and return the a,adot,b,bdot,g and gdot.
-
-    We will then use the resulting gamma and gamma dot to fit the tracklets
-    individualally, and compare with the chi sq."""
+    """ This is not working... """
     # theta_x, theta_y, theta_z, xe, ye, ze, t_emit
     dependent = np.array([np.array((obs[2],obs[3])) for obs in all_obs])
     independent = np.array([np.array((obs[5],obs[6],obs[7],obs[0]-obs[1]-t_ref)) for obs in all_obs])
@@ -138,32 +204,66 @@ def full_fit_trkl(t_ref, g_init, gdot_init,  all_obs, GM=MPC_library.Constants.G
         # print(res[:,0])
         return np.array([x,y])
 
+    def loss(obs,a,adot,b,bdot,g,gdot):
+        """ loss func: aggregate the errors from the loss and minimize this function """
+        loss,chi = 0.0,0.0
+        var_chi = 0.2/205625. # in radians (conversion from arcseconds)
+        # a, adot, b, bdot, g, gdot = arr
+
+
+        xe, ye, ze, t_emit, theta_x, theta_y = np.split(obs,6,axis=1)
+        tx = (a + adot*t_emit - g*xe)/(1 + gdot*t_emit - g*ze)
+        ty = (b + bdot*t_emit - g*ye)/(1 + gdot*t_emit - g*ze)
+        loss = (theta_x-tx)**2 + (theta_y-ty)**2
+        # chi += numerator_chi/var_chi
+        # loss += numerator_chi
+
+        return loss
+
     print(independent.shape,dependent.shape)
-    params, pcov = curve_fit(np.vectorize(f),xdata=independent,ydata=dependent,p0=p0_guess)
+    params, pcov = curve_fit(f, xdata=independent, ydata=dependent, p0=p0_guess)
     print('init',p0_guess)
     print('params',params)
     print('cov',pcov)
     print('reduced chi sq?',sum((f(independent,*params)-dependent)**2)/(len(all_obs)-6.0))
     return params
 
-def test_things(infilename, pixels, nside, n, angDeg=5.5, g=0.4, gdot=0.0):
+def get_res_dict(infilename, pixels, nside, n, angDeg=5.5, g=0.4, gdot=0.0):
+    """ Function to get the results dict object from a given file name. The
+    Results dict object is a dict with tracklet id as the key and the jd and
+    delta jd (Julian data) theta x,y,z, and xe,ye,ze as values in a tuple.
+    --------
+    Args: infilename; str, the name of the .trans file in question.
+          pixels; list or range, the range of all healpix sections the user wants.
+          nside; int, number of sides in the healpix division of the sky
+          n; int, the lunar center. use the function in utils to get the jd
+          angDeg; float, the angle is degrees
+          g; float; the gamma value (distance from observer to the asteroid)
+          gdot; float; the gamma dot value of radial velocity.
+    -------
+    Returns: master_dict; a dictionary with a results dictionary at each key
+                (key in unique on pixel).
+    """
     hp_dict = util.get_hpdict(infilename)
 
+    master_dict = {}
     for i in pixels:
-        vec = hp.pix2vec(nside, i, nest=True)
+        vec = hp.pix2vec(nside, pix, nest=True)
         neighbors = hp.query_disc(nside, vec, angDeg*np.pi/180., inclusive=True, nest=True)
         lines = []
+
         for pix in neighbors:
             for line in hp_dict[pix]:
                 lines.append(line)
         if len(lines) > 0:
             res_dict = get_tracklet_obs(vec,lines)
-            return res_dict
+            master_dict[i] = res_dict
 
-            # transform_to_arrows(util.lunation_center(n), [(g, gdot)], vec, lines, outfilename)
+    return master_dict
 
 def chi_sq_compare(t_ref, g, gdot, tracklets,  fit_tracklet_func=fit_tracklet, GM=MPC_library.Constants.GMsun):
-    """ Here we want to take in the previous a, adot, b, bdot and compare those
+    """ FUNCTION NOT DONE OR USED::::: Here we want to take in the previous a,
+     adot, b, bdot and compare those
     values via chi sq with the orbit calculated by using all the obs in the
     clustered tracklets.  The input will be the reference time, g, gdot and a
     list of lists where the inner list is the observations in a tracklet
@@ -196,6 +296,15 @@ def fit_tracklet_tst(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
 
     NOTE: gamma dot input is not needed and is left for method consistency
 
+    This is not used anywhere yet, and the purpose is to solve for, linearly,
+    what the nlin fit solves for nonlinearly.
+    --------
+    Args:
+          t_ref; float, the lunar center jd
+          g; float; the gamma value (distance from observer to the asteroid)
+          gdot; float; the gamma dot value of radial velocity.
+    --------
+    Returns: solution vector with calculated a,adot,b,bdot,gdot, and given g and time
     """
     # get some vals
     t_emit = [(obs[0]-obs[1]-t_ref) for obs in v]
@@ -217,7 +326,8 @@ def fit_tracklet_tst(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
     return (sol, t_emit[0])
 
 def fit_tracklet_grav(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun, eps2=1e-16):
-    """ Here's a more sophisticated version. """
+    """ NOT USED YET. JUST HERE FOR POTENTIAL FUTURE USE.
+    Here's a more sophisticated version. """
 
     t_emit = [(obs[0]-obs[1]-t_ref) for obs in v]
 
@@ -303,19 +413,25 @@ def fit_tracklet_grav(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun, eps2=1e
 
 
 def get_tracklet_obs(vec,lines):
+    """ This function gets the results dict given the vector and the lines of
+    the input file. Also of note, mat is a rotation matrix that converts from
+    ecliptic vectors to the projection coordinate system. The projection
+    coordinate system has z outward, x parallel to increasing ecliptic longitude,
+     and y northward, making a right-handed system.
+    ---------
+    Args: vec; list, is the reference direction in ecliptic coordinates
+          lines; all the lines from a *.trans file.
+    ---------
+    Returns: results dict where the key is the tracklet id and the value is
+                (jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze).
+    """
     results_dict = defaultdict(list)
 
-    # vec is the reference direction in ecliptic coordinates
     vec = np.array(vec)
     vec = vec/np.linalg.norm(vec)
-    # mat is a rotation matrix that converts from ecliptic
-    # vectors to the projection coordinate system.
-    # The projection coordinate system has z outward,
-    # x parallel to increasing ecliptic longitude, and
-    # y northward, making a right-handed system.
+
     mat = util.xyz_to_proj_matrix(vec)
 
-    # Loop over all the lines from a *.trans file.
     for line in lines:
         if line.startswith('#'):
             # Concatenate all header lines?
@@ -352,8 +468,20 @@ def get_tracklet_obs(vec,lines):
     return results_dict
 
 def _return_arrows_resuts(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func):
-        # Now that we have the observations for each tracklet gathered together,
-        # we iterate through the tracklets, doing a fit for each one.
+    """Now that we have the observations for each tracklet gathered together,
+    we iterate through the tracklets, doing a fit for each one. This fit is just
+    over the a, adot, b, bdot parameters.
+    --------
+    Args: Results_dict; see the get_tracklet_obs() function.
+          t_ref; the lunar center of the month in question.
+          g_gdot_pairs; list of tuples of g,gdot pairs.
+          fit_tracklet_func; the tracklet fitting specified above at the higher
+          level.
+    --------
+    Returns: master_results, where master results is a array of all points related
+                to the ggdot pair that is the key of this dict.
+    """
+
     master_results = {}
     for g_gdot in g_gdot_pairs:
         g, gdot = g_gdot
@@ -369,8 +497,22 @@ def _return_arrows_resuts(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func):
     return master_results
 
 def _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, vec, outfilename, cluster_id_dict={}):
-        # Now that we have the observations for each tracklet gathered together,
-        # we iterate through the tracklets, doing a fit for each one.
+    """Now that we have the observations for each tracklet gathered together,
+    we iterate through the tracklets, doing a fit for each one. This fit is just
+    over the a, adot, b, bdot parameters.
+    --------
+    Args: Results_dict; see the get_tracklet_obs() function.
+          t_ref; the lunar center of the month in question.
+          g_gdot_pairs; list of tuples of g,gdot pairs.
+          fit_tracklet_func; the tracklet fitting specified above at the higher
+          level.
+          vec; list, is the reference direction in ecliptic coordinates
+          outfilename; str, pretty self explanatory, this is the name of the file output
+          cluster_id_dict; dict, the dictionary accompanying the results of find_clusters
+            that has keys as trackletID and values as cluster id.
+    --------
+    Returns: None; writes results out to files.
+    """
     for g_gdot in g_gdot_pairs:
         g, gdot = g_gdot
         results = []
@@ -405,49 +547,37 @@ def _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, ve
                     outfile.write(outstring)
 
 def write_transform_to_arrows(t_ref, g_gdot_pairs, vec, lines, outfilename, cluster_id_dict={}, fit_tracklet_func=fit_tracklet):
-    """ docs"""
-
+    """ wrapper function for _write_arrows_files"""
     results_dict = get_tracklet_obs(vec,lines)
-
     _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, vec, outfilename,cluster_id_dict)
 
 
-def transform_to_arrows(t_ref, g_gdot_pairs, vec, lines, outfilename='', makefiles=False, fit_tracklet_func=fit_tracklet):
-    """
-    Args: g_gdot pairs is a list of tuples with the g, gdot pairs to use
-            for the select_clusters_z functionality, pass the g, gdot in
-            [(g,gdot)] format
-    This is the one to use.  This routine will be used repeatedly.
-
-    Trying a slightly different approach.
-    The set of lines that are being passed in have
-    been selected to be in the same region of sky
-    for an assumed distance.  We are going to re-transform
-    those assuming a fixed z (or gamma) value with respect
-    to the sun and the reference direction, rather than a
-    fixed r, at the reference time
-
-    Rotate observatory positions to projection coordinates,
-    and recalculate simple z-based light-time correction.
-
-    Rotate the observations to projection coordinates,
-    but they will be theta_x, theta_y only
+def transform_to_arrows(t_ref, g_gdot_pairs, vec, lines, outfilename='', fit_tracklet_func=fit_tracklet):
+    # TODO put this method together with the one above it and edit where needed.
+    """ We are going to re-transform those assuming a fixed z (or gamma) value
+    with respect to the sun and the reference direction, rather than a
+    fixed r, at the reference time. Rotate observatory positions to projection coordinates,
+    and recalculate simple z-based light-time correction. Rotate the observations
+    to projection coordinates, but they will be theta_x, theta_y only
 
     Fit the simple abg model, for fixed gamma and
-    possibly gamma_dot.
-    Cluster function that gets passed to the cluster_sky_regions function
-    Here I am doing the same thing as the previous routine, but without files.
-
-    It takes a reference time (t_ref), a set of z, zdot pairs (z_zdot_pairs),
-    a reference direction vector (vec), and a set of observation lines that
-    have been selected for a region of sky and time slice (lines)
-
-    It returns a dictionary of results that have z, zdot pairs as keys and
-    sets of fitted tracklets as results.  Each result has the form:
-
-    trackletID alpha alpha_dot beta beta_dot t_emit,
-    where t_emit is the light time-corrected time relative to the reference
-    time.  The coordinates are now in tangent plane projection.
+    possibly gamma_dot. It takes a reference time (t_ref), a set of z, zdot pairs
+    (z_zdot_pairs), a reference direction vector (vec), and a set of observation
+    lines that have been selected for a region of sky and time slice (lines)
+    -------
+    Args: t_ref, float, the lunation center,
+          g_gdot pairs is a list of tuples with the g, gdot pairs to use
+                for the select_clusters_z functionality, pass the g, gdot in
+                [(g,gdot)] format
+        fit_tracklet_func; the tracklet fitting specified above at the higher
+        level.
+        vec; list, is the reference direction in ecliptic coordinates
+        outfilename; str, pretty self explanatory, this is the name of the file output (none in this case)
+        NA: cluster_id_dict; dict, the dictionary accompanying the results of find_clusters
+          that has keys as trackletID and values as cluster id.
+    --------
+    Returns: master_results, where master results is a array of all points related
+                to the ggdot pair that is the key of this dict.
     """
     results_dict = get_tracklet_obs(vec,lines)
 
@@ -455,7 +585,25 @@ def transform_to_arrows(t_ref, g_gdot_pairs, vec, lines, outfilename='', makefil
 
 
 def cluster_sky_regions(g_gdot_pairs, pixels, t_ref, infilename, nside=8, angDeg=7.5, cluster_func=transform_to_arrows):
-    """ cluster function that gets passed to the do_training_run"""
+    """ This function is the main cluster function.  We take in lots of arguments
+    and return a dictionary with keys as pixels (sections in the healpix breakup of the
+    sky), and the values as the output (master_dict) from transform_to_arrows. This
+    is made up of a dict of keys as g_gdot pairs and results arrays as values with
+    all the related tracklets.
+    --------
+    Args: t_ref, float, the lunation center,
+          g_gdot pairs is a list of tuples with the g, gdot pairs to use
+                for the select_clusters_z functionality, pass the g, gdot in
+                [(g,gdot)] format
+          pixels; range or list, the healpix breakup of the sky
+          infilename; str, the location and filename of the .trans file
+          nside; int, the number of sides in the healpix pixels breakout
+          angDeg; float, the angle is degrees
+          cluster_func; function to use for clustering.
+    ---------
+    Returns: a dictionary with pixels as keys and dicts as values where the inner
+                dicts have g_gdotpairs as keys and realted points as values.
+    """
     # This bit from here
     hp_dict = util.get_hpdict(infilename)
 
@@ -486,8 +634,25 @@ def cluster_sky_regions(g_gdot_pairs, pixels, t_ref, infilename, nside=8, angDeg
 
 
 def _get_cluster_counter(master, dt, rad, mincount):
-    """ cluster_counter is unique on clusters and cluster id
-    dict is unique on tracklets"""
+    """ This function gets the cluster_counter object. The object is unique on
+    clusters and the cluster_id_dict is unique on tracklets.  The cluster_counter
+    has tracklet_id's joined with pipes '|' as keys and the number of occurances
+    as values. The cluster_id_dict has tracklet_id as the key and the cluster id
+    as the value of the dict.
+    ---------
+    Args: master; the results of the clustering function, which returns a dict
+            with pixels as keys and dicts as values where the inner dicts have
+            g_gdot_pairs as keys and realted points as values.
+          dt; float, the dt measure we set.  First principles suggests 15, but it is
+                functionally the weight of the importance of position and velocity,
+                so it can be whatever you want.
+          rad; float, the cluster radius we look within for the KDTree.
+          mincount; int, the fewest number of allowable trackelts is a cluster.
+    ---------
+    Returns:  cluster_counter dict with tracklet_id's joined with pipes '|' as
+        keys and the number of occurances as values, and cluster_id_dict has
+        tracklet_id as the key and the cluster id as the value of the dict.
+    """
     cluster_counter = Counter()
     cluster_id_dict = {}
     for pix, d in master.items():
@@ -519,7 +684,7 @@ def _get_cluster_counter(master, dt, rad, mincount):
 
 
 def _rates_to_results(rates_dict, dts):
-    """ helper for find clusters"""
+    """ helper for train clusters, used in the training method, NA to orb fit"""
     results_dict = {}
     for dt in dts:
         values = []
@@ -546,7 +711,8 @@ g_gdots = [(x,y) for x in gs for y in gdots]
 def train_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
                     dts=np.arange(5, 30, 5), radii=np.arange(0.0001, 0.0100, 0.0001),
                     cluster_sky_function=cluster_sky_regions, mincount=3):
-    """ training docs"""
+    """ This function performs a training run over a set of training data provided
+    by Matt Payne of the MPC in December 2017. Finish docs later as this is NA to orb fit"""
     master = cluster_sky_function(g_gdots, pixels, t_ref, infilename)
     # The training case
     rates_dict={}
@@ -570,7 +736,9 @@ def train_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
 def test_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
                     dt=15, rad=0.00124,
                     cluster_sky_function=cluster_sky_regions, mincount=3):
-    """ tst docs """
+    """ Also based on the training set.  This function allows the user to test
+    out how well their chosen dt ad rad hyper paremeters perform on training data.
+    Again, NA to orb fit. """
     master = cluster_sky_function(g_gdots, pixels, t_ref, infilename)
 
     cluster_counter, cluster_id_dict = _get_cluster_counter(master, dt, rad, mincount)
@@ -581,7 +749,28 @@ def test_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
 def find_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
                     dt=15, rad=0.00124,
                     cluster_sky_function=cluster_sky_regions, mincount=3):
-    """ Run docs"""
+    """ This is one of the centerpeice functions of the module.  It takes in the
+    hyper parameters, in addition to the various g_gdots the user wants to try,
+    and returns the cluster_counter and cluster_id_dict objects.  The cluster_counter
+    has tracklet_id's joined with pipes '|' as keys and the number of occurances
+    as values. The cluster_id_dict has tracklet_id as the key and the cluster id
+    as the value of the dict.
+    ---------
+    Args: pixels; range or list, the healpix breakup of the sky;
+          infilename; str, the location and name of the .trans file the user
+                wants to test.
+          t_ref; the lunation center
+          g_gdots; the gamma and gamma dot values the user specifies for the cluster
+                    finding.
+          dt; float, the dt measure we set.  First principles suggests 15, but it is
+                functionally the weight of the importance of position and velocity,
+                so it can be whatever you want.
+          rad; float, the cluster radius we look within for the KDTree.
+          cluster_sky_function; function used to cluster.
+          mincount; int, the fewest number of allowable trackelts is a cluster.
+    ----------
+    Returns: the cluster_counter and cluster_id_dict objects (mentioned above)
+    """
     master = cluster_sky_function(g_gdots, pixels, t_ref, infilename)
 
     cluster_counter, cluster_id_dict = _get_cluster_counter(master, dt, rad, mincount)
@@ -589,11 +778,10 @@ def find_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
 
 
 
-
-
-
 ## TODO why is the n not specified and alwasy -11??? and angle is different
 def output_sky_regions(pixels, infilename, nside=8, n=-11, angDeg=7.5):
+    """ Just gets the lines of a file for the pixels specified.
+    Not super realted to orb fit, but you could easily use it as a helper."""
     hp_dict = util.get_hpdict(infilename)
 
     pixel_results = {}
@@ -606,11 +794,12 @@ def output_sky_regions(pixels, infilename, nside=8, n=-11, angDeg=7.5):
         for pix in neighbors:
             for line in hp_dict[pix]:
                 lines.append(line)
-
     return lines
 
 
 def accessible_clusters(pixels, infilename, mincount=3):
+    """ this counts all the clusters, and returns several counters, not super
+    applicable for orb fit"""
     true_counts={}
     mergedCounter_dict = {}
     mergedTime_dict = {}
@@ -668,6 +857,19 @@ def unique_clusters(test_set):
     return success_dict, failure_counter
 
 def generate_sky_region_files(infilename, pixels, nside, n, angDeg=5.5, g=0.4, gdot=0.0, cluster_id_dict={}):
+    """ This function generates the files needed to plot the quiver functions.
+    --------
+    Args: infilename; str, the name of the .trans file that you want to genreate files for.
+          pixels; list or range, the range of all healpix sections the user wants.
+          nside; int, number of sides in the healpix division of the sky
+          n; int, the lunar center. use the function in utils to get the jd
+          angDeg; float, the angle is degrees
+          g; float; the gamma value (distance from observer to the asteroid)
+          gdot; float; the gamma dot value of radial velocity.
+          cluster_id_dict; dict, the cluster_id_dict output from find clusters,
+                     used strictly for plotting.
+    --------
+    Returns: None, but writes files."""
     hp_dict = util.get_hpdict(infilename)
 
     for i in pixels:
