@@ -147,30 +147,41 @@ def prelim_fit(obsarray,pout):
     return pres, covar
 
 
-def chisq(opt_result,args):
+def chisq(opt_result,args,flag='chi'):
     """ calc the chi sq for the result of the minimization function.
-    returns the agg chi sq and the chi sq array on a observation level 
+    returns the agg chi sq and the chi sq array on a observation level
     """
-    chi,var_chi=0.0,(0.2/205625.)**2 # in radians (from arcseconds)
+    vflag = ('chi','rms')
+    if flag not in vflag:
+        raise ValueError('flag not in valid flags try rms or chi')
+    if flag=='chi':
+        chi,var_chi=0.0,(0.2/205625.)**2 # in radians (from arcseconds)
+    if flag=='rms':
+        chi,var_chi=0.0,(1./205625.)**2
+
     a,adot,b,bdot,g,gdot = opt_result
     chi_arr = []
     for arg in args:
         xe, ye, ze, t_emit, theta_x, theta_y = arg
         tx = (a + adot*t_emit - g*xe)/(1 + gdot*t_emit - g*ze)
         ty = (b + bdot*t_emit - g*ye)/(1 + gdot*t_emit - g*ze)
-        chi += (theta_x-tx)**2/var_chi + (theta_y-ty)**2/var_chi
-        chi_arr.append((theta_x-tx)**2/var_chi + (theta_y-ty)**2/var_chi)
+        if flag=='rms':
+            calc_chi = np.sqrt((theta_x-tx)**2/var_chi + (theta_y-ty)**2/var_chi)
+        elif flag=='chi':
+            calc_chi = (theta_x-tx)**2/var_chi + (theta_y-ty)**2/var_chi
+        chi += calc_chi
+        chi_arr.append(calc_chi)
 
-    return chi,chi_arr
+    return chi/len(chi_arr),chi_arr
 
-def vis_arrows_by_chi(params_dict,chi_res):
+def vis_arrows_by_rms(params_dict,c_res):
     """ This function plots arrows (just cluster fits).  The color is
-    given by the log transform of the chi_sq value for each cluster fit.
+    given by the rms value for each cluster fit.
     """
     arrows = []
-    for v,ch in zip(params_dict.values(),chi_res):
+    for v,ch in zip(params_dict.values(),c_res):
         # k represents cluster id and v represents the related a adot,b,bdot,g,g_dot
-        arrows.append(list(v[:4])+[np.log(ch)])
+        arrows.append(list(v[:4])+[ch])
     a,adot,b,bdot,colors = np.split(np.array(arrows),5,axis=1)
 
     # colormap = mlc.ListedColormap (['grey','blue','red'])
@@ -180,12 +191,12 @@ def vis_arrows_by_chi(params_dict,chi_res):
     Q = ax.quiver(a, b, adot, bdot, colors, cmap=colormap,scale=0.3, width=0.0003)
     # ax.quiverkey(Q, X, Y, U, label,)
     plt.colorbar(Q,ax=ax)
-    plt.xlim(-0.1, 0.1)
-    plt.ylim(-0.1, 0.1)
+    # plt.xlim(-0.1, 0.1)
+    # plt.ylim(-0.1, 0.1)
     plt.xlabel('alpha')
     plt.ylabel('beta')
-    plt.title('Arrows (just cluster centers) colored by log transform of the chi sq value')
-    plt.savefig('arrows_with_chisq_color.pdf')
+    plt.title('Arrows (just cluster centers) colored by the rms value')
+    plt.savefig('arrows_with_rms_color.pdf')
     # plt.show()
 
 def vis_arrows_by_chi_with_trkl(params_dict, agg_dict, idxs, t_ref, chi_res, g_init=0.4, gdot_init=0.0,label='None'):
@@ -231,7 +242,8 @@ def vis_arrows_by_chi_with_trkl(params_dict, agg_dict, idxs, t_ref, chi_res, g_i
     fig,ax=plt.subplots(figsize=(18, 16))
 
     Q = ax.quiver(a, b, adot, bdot, colors, cmap=colormap,scale=0.3, width=0.0003)
-    ax.quiver(ac,bc,adotc,bdotc,colorsc,cmap=cm.gray, scale=0.3, width=0.0003, alpha=0.5)
+    # ax.quiver(ac,bc,adotc,bdotc,colorsc,cmap=cm.gray, scale=0.3, width=0.0003, alpha=0.3)
+    ax.quiver(ac,bc,adotc,bdotc, scale=0.3, width=0.0003, alpha=0.3)
     if label!='None':
         for pa,pb,pad,pbd,ggd,ch in zip(a, b, adot, bdot, g_gdots, chi_res):
             if label=='ggdot':
@@ -243,8 +255,8 @@ def vis_arrows_by_chi_with_trkl(params_dict, agg_dict, idxs, t_ref, chi_res, g_i
             if -0.1<pa[0]<0.1 and -0.1<pb[0]<0.1:
                 plt.quiverkey(Q, X=pa[0], Y=pb[0], U=pad[0],label=lab, coordinates='data')
     plt.colorbar(Q,ax=ax)
-    plt.xlim(-0.1, 0.1)
-    plt.ylim(-0.1, 0.1)
+    plt.xlim(-0.2, 0.2)
+    plt.ylim(-0.2, 0.2)
     plt.xlabel('alpha')
     plt.ylabel('beta')
     plt.title('Arrows colored by the log transform of the chi squared value. tracklets are overlayed in light grey')
@@ -255,7 +267,7 @@ def vis_arrows_by_chi_with_trkl(params_dict, agg_dict, idxs, t_ref, chi_res, g_i
 def visualize(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gdot_init=0.0):
     """ This function displays and saves a quiver plot with the arrows form our
     fitted clusters (passed in params_dict), and our original measures passed in
-    agg_dict (only the netries with the realted cluster id's passed in idxs).
+    agg_dict (only the entries with the realted cluster id's passed in idxs).
     ============
     The plot is colored by the category of the arrow (cluster fits are dark,
     transformed clusters, with the g and gdot from the cluster fit are inbetween,
@@ -340,6 +352,10 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, GM=MPC_library
         x0_guess.append(np.array(fit_tracklet(t_ref, g_init, gdot_init, obs_in_trkl)[:4]))
     x0_guess = np.append(np.array(x0_guess).mean(axis=0), [g_init,gdot_init])
 
+    def grad_loss(arr):
+        """ Hoook for vincent to implement the gradient of the loss function below"""
+        pass
+
     def loss(arr):
         """ loss func: aggregate the errors from the loss and minimize this function
         Kind of nasty because it uses global args values, but it should work."""
@@ -357,7 +373,7 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, GM=MPC_library
     opt_out = minimize(loss,x0=np.array(x0_guess))#,method='L-BFGS-B')
 
     # calc chi sq
-    csq,csq_arr = chisq(opt_out.x,args)
+    csq,csq_arr = chisq(opt_out.x,args,flag='rms')
 
     # print('init',x0_guess)
     # print('diff',[abs(i-j) for i,j in zip(x0_guess,opt_out.x)])
@@ -368,6 +384,11 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, GM=MPC_library
 def fit_extend(infilename, clust_ids, pixels, nside, n, angDeg=5.5, gi=0.4, gdoti=0.0):
     """ Not a real this yet.. still in progress wrapper for doing the whole nlin fit process"""
     res_dict = get_res_dict(infilename, pixels, nside, n, angDeg=angDeg, gi=g, gdoti=gdot)
+
+    agg_dict = defaultdict(list)
+    for k,v in tr_clust_ids.items():
+        # k is the tracklet id, v is the cluster id
+        agg_dict[v].append([tuple([k]+list(i)) for i in res_dict[k]])
 
     for i in pixels:
         agg_dict = defaultdict(list)
