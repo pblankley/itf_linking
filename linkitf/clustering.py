@@ -25,6 +25,7 @@ from matplotlib.colors import Normalize
 import matplotlib.colors as mlc
 import matplotlib.cm as cm
 import util
+from copy import copy
 
 Observatories = MPC_library.Observatories
 
@@ -385,9 +386,13 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, ang
     """ Not a real this yet.. still in progress wrapper for doing the whole nlin fit process"""
     res_dict = get_res_dict(infilename, pixels, nside, n, angDeg=angDeg, gi=g, gdoti=gdot)
     t_ref = util.lunation_center(n)
+    cluster_counter = Counter()
+    cluster_id_dict = copy(clust_ids)
 
+    # for each chunk of sky in our window
     for pix, results_d in res_dict.items():
 
+        # get the arrows with the old transforms
         ot_arrows = _return_arrows_resuts(results_dict, t_ref, [(gi,gdoti)], \
                                             fit_tracklet_func=fit_tracklet).values()
         i = 0
@@ -400,44 +405,51 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, ang
         ot_points=np.array(combined)
         ot_tree = scipy.spatial.cKDTree(ot_points)
 
+        # create agg_dict for the specific chunk of sky
         agg_dict = defaultdict(list)
         for k,v in clust_ids.items():
             # k is the tracklet id, v is the cluster id
             agg_dict[v].append([tuple([k]+list(i)) for i in results_d[k]])
 
+        # get the nonlinear fit of the clusters in this pixel
         fit_dict, results = nlin_fits(agg_dict,g,gdot,t_ref)
-        
+
+        # for each cluster check the nearness of the surrounding
+        # points in the old transform and pick canidates to get transformed
+        # with the new g and gdot and then comopare again, with a larger
+        # radius than the initial comparison. Then if new cluster id's have been
+        # added to the cluster via this method, add them to cluster counter
+        # and change the realted tracklet id in cluster_id_dict (newer clusters
+        # superseed older in the case of overlap.
         for k,v in fit_dict.items():
             # k is the cluster id and v is the fitted 6 params
             a,adot,b,bdot,g,gdot = v
+            trkl_ids_in_cluster = set([i[0] for tracklet in agg_dict[k] for i in tracklet])
 
             canidates = ot_tree.query_ball_point(v[:4],r=rad*10.) # tuneable param
-            # matches = tree.query_ball_tree(tree, rad)
+
 
             nt_points = []
-            for cani in canidates:
-                for idx in cani:
-                    tracklet_id = label_dict[idx].strip()
-                    nt_points.append(np.array(fit_tracklet(t_ref, g, gdot, results_d[tracklet_id])[:4]))
+            nt_label_dict = []
+            for idx in canidates:
+                tracklet_id = label_dict[idx].strip()
+                nt_points.append(np.array(fit_tracklet(t_ref, g, gdot, results_d[tracklet_id])[:4]))
+                nt_label_dict.append(tracklet_id)
 
             nt_tree = scipy.spatial.cKDTree(nt_points)
-            matches = ot_tree.query_ball_point(v[:4],r=rad*3.) # tuneable param
+            matches = nt_tree.query_ball_point(v[:4],r=rad*2.) # tuneable param
 
-            for match in matches:
-                cluster_list =[]
-                for idx in match:
-                    tracklet_id = label_dict[idx].strip()
-                    cluster_list.append(tracklet_id)
-                    cluster_id_dict.update({tracklet_id: j})
-                cluster_key='|'.join(sorted(cluster_list))
-                cluster_counter.update({cluster_key: 1})
+            cluster_list =[]
+            for idx in matches:
+                tracklet_id = nt_label_dict[idx].strip()
+                cluster_list.append(tracklet_id)
+                cluster_id_dict.update({tracklet_id: k})
+            trkl_ids_in_cluster |= set(cluster_list)
+            cluster_key='|'.join(sorted(trkl_ids_in_cluster))
+            cluster_counter.update({cluster_key: 1})
 
-                    cluster_list.append(tracklet_id)
-                    cluster_id_dict.update({tracklet_id: j})
-                cluster_key='|'.join(sorted(cluster_list))
-                cluster_counter.update({cluster_key: 1})
 
-            return cluster_counter, cluster_id_dict
+    return cluster_counter, cluster_id_dict
 
 def nlin_fits(agg_dict, g_init, gdot_init, t_ref):
     """ helper for nlin fits"""
