@@ -149,7 +149,8 @@ def prelim_fit(obsarray,pout):
 
 def chisq(opt_result,args):
     """ calc the chi sq for the result of the minimization function.
-    NOTE: probably wrong... """
+    returns the agg chi sq and the chi sq array on a observation level 
+    """
     chi,var_chi=0.0,(0.2/205625.)**2 # in radians (from arcseconds)
     a,adot,b,bdot,g,gdot = opt_result
     chi_arr = []
@@ -163,6 +164,9 @@ def chisq(opt_result,args):
     return chi,chi_arr
 
 def vis_arrows_by_chi(params_dict,chi_res):
+    """ This function plots arrows (just cluster fits).  The color is
+    given by the log transform of the chi_sq value for each cluster fit.
+    """
     arrows = []
     for v,ch in zip(params_dict.values(),chi_res):
         # k represents cluster id and v represents the related a adot,b,bdot,g,g_dot
@@ -184,62 +188,79 @@ def vis_arrows_by_chi(params_dict,chi_res):
     plt.savefig('arrows_with_chisq_color.pdf')
     # plt.show()
 
-def vis_arrows_by_chi_with_trkl(params_dict, agg_dict, idxs, t_ref, chi_res, g_init=0.4, gdot_init=0.0):
-        a,adot,b,bdot,colors = [],[],[],[],[]
-        arrows,g_gdots = [],[]
-        cluster_tracklet_level = []
+def vis_arrows_by_chi_with_trkl(params_dict, agg_dict, idxs, t_ref, chi_res, g_init=0.4, gdot_init=0.0,label='None'):
+    """ This function plots arrows (both the cluster fits and the original tracklets).  The color is
+    given by the log transform of the chi_sq value for each cluster fit (the tracklets are all grey).
+    the label tag tells the function which labels to display. options are ['None','ggdot','id','chi']
+    """
+    valid_labels = ['None','ggdot','id','chi']
+    if label not in valid_labels:
+        raise ValueError('put in a valid lablel ; read docs')
+    a,adot,b,bdot,colors = [],[],[],[],[]
+    arrows,g_gdots = [],[]
+    cluster_tracklet_level = []
 
-        for k,v in agg_dict.items():
-            if k in idxs:
-                cluster_tracklet_level.append(v)
+    for k,v in agg_dict.items():
+        if k in idxs:
+            cluster_tracklet_level.append(v)
 
-        if len(params_dict)!= len(cluster_tracklet_level):
-            raise ValueError('the length of the cluster params {0} is different from the number of ids \
-                                passed for agg_dict {1}'.format(len(params_dict),len(cluster_tracklet_level)))
-        for k,v,ch in zip(params_dict.keys(),params_dict.values(),chi_res):
-            # k represents cluster id and v represents the related a adot,b,bdot,g,g_dot
-            arrows.append(list(v[:4])+[np.log(ch)])
-            g_gdots.append((k,v[4:]))
-        # for clust_trkls,cparams in zip(cluster_tracklet_level,params_dict.values()):
-        #     g_cl,gdot_cl = cparams[-2:]
-        #     for trkl in clust_trkls:
-        #         obs_in_trkl = [i[1:] for i in trkl]
-        #         arrows.append(list(fit_tracklet(t_ref, g_cl, gdot_cl, obs_in_trkl)[:4])+[1])
-        cl_trk_arrows = []
-        for clust_trkls in cluster_tracklet_level:
-            for trkl in clust_trkls:
-                obs_in_trkl = [i[1:] for i in trkl]
-                cl_trk_arrows.append(list(fit_tracklet(t_ref, g_init, gdot_init, obs_in_trkl)[:4])+[1])
-        # print(arrows)
-        # print([a for a in arrows if a[-1]==10])
-        ac,adotc,bc,bdotc,colorsc = np.split(np.array(cl_trk_arrows),5,axis=1)
-        a,adot,b,bdot,colors = np.split(np.array(arrows),5,axis=1)
+    if len(params_dict)!= len(cluster_tracklet_level):
+        raise ValueError('the length of the cluster params {0} is different from the number of ids \
+                            passed for agg_dict {1}'.format(len(params_dict),len(cluster_tracklet_level)))
+    for k,v,ch in zip(params_dict.keys(),params_dict.values(),chi_res):
+        # k represents cluster id and v represents the related a adot,b,bdot,g,g_dot
+        arrows.append(list(v[:4])+[np.log(ch)])
+        g_gdots.append((k,v[4:]))
+    # for clust_trkls,cparams in zip(cluster_tracklet_level,params_dict.values()):
+    #     g_cl,gdot_cl = cparams[-2:]
+    #     for trkl in clust_trkls:
+    #         obs_in_trkl = [i[1:] for i in trkl]
+    #         arrows.append(list(fit_tracklet(t_ref, g_cl, gdot_cl, obs_in_trkl)[:4])+[1])
+    cl_trk_arrows = []
+    for clust_trkls in cluster_tracklet_level:
+        for trkl in clust_trkls:
+            obs_in_trkl = [i[1:] for i in trkl]
+            cl_trk_arrows.append(list(fit_tracklet(t_ref, g_init, gdot_init, obs_in_trkl)[:4])+[1])
+    # print(arrows)
+    # print([a for a in arrows if a[-1]==10])
+    ac,adotc,bc,bdotc,colorsc = np.split(np.array(cl_trk_arrows),5,axis=1)
+    a,adot,b,bdot,colors = np.split(np.array(arrows),5,axis=1)
 
-        # colormap = mlc.ListedColormap (['grey','blue','red'])
-        colormap = cm.cool
-        fig,ax=plt.subplots(figsize=(18, 16))
+    # colormap = mlc.ListedColormap (['grey','blue','red'])
+    colormap = cm.viridis
+    fig,ax=plt.subplots(figsize=(18, 16))
 
-        Q = ax.quiver(a, b, adot, bdot, colors, cmap=colormap,scale=0.3, width=0.0003)
-        ax.quiver(ac,bc,adotc,bdotc,colorsc,cmap=cm.gray, scale=0.3, width=0.0003, alpha=0.5)
-        for pa,pb,pad,pbd,ggd in zip(a, b, adot, bdot,g_gdots):
-            # label='g: {0:.6f}, gdot: {0:.6f}'.format(ggd[1][0],ggd[1][1])
-            # label='id:%s'%ggd[0]
+    Q = ax.quiver(a, b, adot, bdot, colors, cmap=colormap,scale=0.3, width=0.0003)
+    ax.quiver(ac,bc,adotc,bdotc,colorsc,cmap=cm.gray, scale=0.3, width=0.0003, alpha=0.5)
+    if label!='None':
+        for pa,pb,pad,pbd,ggd,ch in zip(a, b, adot, bdot, g_gdots, chi_res):
+            if label=='ggdot':
+                lab = 'g: {0:.6f}, gdot: {1:.6f}'.format(ggd[1][0],ggd[1][1])
+            if label=='id':
+                lab = 'id:%s'%ggd[0]
+            if label=='chi':
+                lab = 'chi: {}'.format(ch)
             if -0.1<pa[0]<0.1 and -0.1<pb[0]<0.1:
-                plt.quiverkey(Q, X=pa[0], Y=pb[0], U=pad[0],label='g: {0:.6f}, gdot: {1:.6f}'.format(ggd[1][0],ggd[1][1]), coordinates='data')
-        plt.colorbar(Q,ax=ax)
-        plt.xlim(-0.1, 0.1)
-        plt.ylim(-0.1, 0.1)
-        plt.xlabel('alpha')
-        plt.ylabel('beta')
-        plt.title('Arrows colored by the log transform of the chi squared value. tracklets are overlayed in light grey')
-        plt.savefig('arrows_with_chi_and_trkl.pdf')
-        # plt.show()
-        return g_gdots
+                plt.quiverkey(Q, X=pa[0], Y=pb[0], U=pad[0],label=lab, coordinates='data')
+    plt.colorbar(Q,ax=ax)
+    plt.xlim(-0.1, 0.1)
+    plt.ylim(-0.1, 0.1)
+    plt.xlabel('alpha')
+    plt.ylabel('beta')
+    plt.title('Arrows colored by the log transform of the chi squared value. tracklets are overlayed in light grey')
+    plt.savefig('arrows_with_chi_and_trkl_label_{}.pdf'.format(label))
+    # plt.show()
+    return g_gdots
 
 def visualize(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gdot_init=0.0):
     """ This function displays and saves a quiver plot with the arrows form our
     fitted clusters (passed in params_dict), and our original measures passed in
-    agg_dict (only the netries with the realted cluster id's passed in idxs)."""
+    agg_dict (only the netries with the realted cluster id's passed in idxs).
+    ============
+    The plot is colored by the category of the arrow (cluster fits are dark,
+    transformed clusters, with the g and gdot from the cluster fit are inbetween,
+    and the original tracklet fits are light blue.)
+    """
     a,adot,b,bdot,colors = [],[],[],[],[]
     arrows = []
     cluster_tracklet_level = []
