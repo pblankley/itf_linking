@@ -180,6 +180,7 @@ def vis_arrows_by_chi(params_dict,chi_res):
     plt.ylim(-0.1, 0.1)
     plt.xlabel('alpha')
     plt.ylabel('beta')
+    plt.title('Arrows (just cluster centers) colored by log transform of the chi sq value')
     plt.savefig('arrows_with_chisq_color.pdf')
     # plt.show()
 
@@ -230,11 +231,15 @@ def vis_arrows_by_chi_with_trkl(params_dict, agg_dict, idxs, t_ref, chi_res, g_i
         plt.ylim(-0.1, 0.1)
         plt.xlabel('alpha')
         plt.ylabel('beta')
+        plt.title('Arrows colored by the log transform of the chi squared value. tracklets are overlayed in light grey')
         plt.savefig('arrows_with_chi_and_trkl.pdf')
         # plt.show()
         return g_gdots
 
 def visualize(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gdot_init=0.0):
+    """ This function displays and saves a quiver plot with the arrows form our
+    fitted clusters (passed in params_dict), and our original measures passed in
+    agg_dict (only the netries with the realted cluster id's passed in idxs)."""
     a,adot,b,bdot,colors = [],[],[],[],[]
     arrows = []
     cluster_tracklet_level = []
@@ -269,12 +274,13 @@ def visualize(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gdot_init=0.0):
     fig,ax=plt.subplots(figsize=(18, 16))
 
     Q = ax.quiver(a, b, adot, bdot, colors, cmap=colormap,scale=0.3, width=0.0003)
-    # ax.quiverkey(Q, X, Y, U, label,)
 
+    plt.colorbar(Q,ax=ax)
     plt.xlim(-0.1, 0.1)
     plt.ylim(-0.1, 0.1)
     plt.xlabel('alpha')
     plt.ylabel('beta')
+    plt.title('Arrows with orbit fit. Darker colors represent fitted clusters, and lighter clusters represent individual tracklets.')
     plt.savefig('arrows_with_orb_fit.pdf')
     # plt.show()
 
