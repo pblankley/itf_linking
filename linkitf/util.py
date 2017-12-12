@@ -24,7 +24,7 @@ Observatories = MPC_library.Observatories
 ObservatoryXYZ = Observatories.ObservatoryXYZ
 
 def lunation_center(n, tref=2457722.0125, p=29.53055):
-    """ Returns the jd of new moon, to the nearest half day"""
+    """ Returns the jd of new moon, to the nearest half day -825-10"""
     t = tref + p*n
     tp = np.floor(t) + 0.5
     return tp

@@ -3,6 +3,7 @@ import numpy as np
 import scipy.interpolate
 from scipy.stats import chisquare
 from scipy.optimize import curve_fit
+from scipy.optimize import minimize
 import matplotlib.gridspec as gridspec
 import matplotlib as mpl
 import matplotlib.cm as cm
@@ -45,6 +46,66 @@ def fit_tracklet(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
         # a     adot b  bdot  dt (change in time)
     return (cx, mx, cy, my, t_emit[0])
 
+# def gravity(time,g,GM=MPC_library.Constants.GMsun):
+#     """ calculate the gravity in respect to a direction """
+#     #acc_z = -GM
+
+
+def full_fit_t_loss(t_ref, g_init, gdot_init,  all_obs, GM=MPC_library.Constants.GMsun):
+    """ This function needs to take in all the observations over the cluster of
+    tracklets (min of 3 tracklets), and return the a,adot,b,bdot,g and gdot.
+
+    We will then use the resulting gamma and gamma dot to fit the tracklets
+    individualally, and compare with the chi sq."""
+    # theta_x, theta_y, theta_z, xe, ye, ze, t_emit
+    dependent = np.array([np.array((obs[2],obs[3])) for obs in all_obs])
+    args = [(obs[5],obs[6],obs[7],obs[0]-obs[1]-t_ref,obs[2],obs[3]) for obs in all_obs]
+
+    x0_guess = list(fit_tracklet(t_ref, g_init, gdot_init, all_obs)[:4])
+    x0_guess.extend([g_init,gdot_init])
+
+    # print('init',x0_guess)
+
+    def loss(arr):
+        """ loss func"""
+        # print('obs',obs.shape)
+        # print(np.split(obs,4,axis=1))
+        # xe,ye,ze,t_emit = np.split(obs,4,axis=1)
+        loss = 0.0
+        # print(type(arr))
+        # print('arr',arr)
+        a, adot, b, bdot, g, gdot = arr
+        # print(a,adot,b,bdot,g,gdot)
+        for arg in args:
+            # print(type(a))
+            # print('a',a)
+            xe, ye, ze, t_emit, theta_x, theta_y = arg
+            # print(xe, ye, ze, t_emit, theta_x, theta_y)
+            # print(a,'+', adot,'*',t_emit, '-' ,g,'*',xe,'/',1, '+', 'gdot','*',t_emit, '-', g,'*',ze)
+            tx = (a + adot*t_emit - g*xe)/(1 + gdot*t_emit - g*ze)
+            ty = (b + bdot*t_emit - g*ye)/(1 + gdot*t_emit - g*ze)
+            # print('ttttxxss',tx,ty)
+            # print(theta_x,theta_y)
+            loss += (theta_x-tx)**2 + (theta_y-ty)**2
+
+        # print(x,y)
+        # print(dependent.shape)
+        # print(res.shape)
+        # print(res[:,0].reshape(-1,1))
+        # print(res[:,0])
+        # print(type(loss))
+        # print(loss)
+        return loss
+
+    # print(independent.shape,dependent.shape)
+    opt_out = minimize(loss,x0=np.array(x0_guess))
+    print('init',x0_guess)
+    print('params',opt_out.x)
+    print('diff',[abs(i-j) for i,j in zip(x0_guess,opt_out.x)])
+    print('everything',opt_out)
+    # print('reduced chi sq?',sum((f(independent,*params)-dependent)**2)/(len(all_obs)-6.0))
+    return opt_out.x
+
 # results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
 def full_fit_trkl(t_ref, g_init, gdot_init,  all_obs, GM=MPC_library.Constants.GMsun):
     """ This function needs to take in all the observations over the cluster of
@@ -63,21 +124,22 @@ def full_fit_trkl(t_ref, g_init, gdot_init,  all_obs, GM=MPC_library.Constants.G
 
     def f(obs,a,adot,b,bdot,g,gdot):
         """ """
-        print('obs',obs.shape)
+        # print('obs',obs.shape)
         # print(np.split(obs,4,axis=1))
-        xe,ye,ze,t_emit = np.split(obs,4,axis=1)
+        # xe,ye,ze,t_emit = np.split(obs,4,axis=1)
+        xe,ye,ze,t_emit = obs
         x = (a + adot*t_emit - g*xe)/(1 + gdot*t_emit - g*ze)
         y = (b + bdot*t_emit - g*ye)/(1 + gdot*t_emit - g*ze)
-        res = np.concatenate([x,y],axis=1)
+
         # print(x,y)
-        print(dependent.shape)
-        print(res.shape)
-        print(res[:,0].reshape(-1,1))
-        print(res[:,0])
-        return x,y
+        # print(dependent.shape)
+        # print(res.shape)
+        # print(res[:,0].reshape(-1,1))
+        # print(res[:,0])
+        return np.array([x,y])
 
     print(independent.shape,dependent.shape)
-    params, pcov = curve_fit(f,xdata=independent,ydata=dependent,p0=p0_guess,method='trf')
+    params, pcov = curve_fit(np.vectorize(f),xdata=independent,ydata=dependent,p0=p0_guess)
     print('init',p0_guess)
     print('params',params)
     print('cov',pcov)
