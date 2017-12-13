@@ -241,9 +241,9 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
     def_return = [opt_out.x, opt_out.fun, err, err_arr]
     if details:
         def_return.extend(additional_returns)
-    print('init guess',x0_guess)
-    print('result',opt_out.x)
-    print('diff',[abs(x-o) for x,o in zip(x0_guess,opt_out.x)])
+    # print('init guess',x0_guess)
+    # print('result',opt_out.x)
+    # print('diff',[abs(x-o) for x,o in zip(x0_guess,opt_out.x)])
     return tuple(def_return)
 
 def cluster_clusters(clust_ids, results_d, g_init, gdot_init, t_ref, rad):
@@ -278,6 +278,145 @@ def cluster_clusters(clust_ids, results_d, g_init, gdot_init, t_ref, rad):
         cluster_counter.update({cluster_key: 1})
 
     return cluster_counter, cluster_id_dict
+
+def cluster_clusters2(clust_count, results_d, g_init, gdot_init, t_ref, rad):
+    """ function to cluster the clusters"""
+    # Get all the fitted
+    cluster_counter = Counter()
+    points, labels = [], []
+
+    fit_dict, agg_dict = _nlin_fits2(clust_count, results_d, g_init, gdot_init, t_ref)
+    for k,v in fit_dict.items():
+        points.append(v[0])
+        labels.append(k)
+
+    points = np.array(points)
+
+    tree = scipy.spatial.cKDTree(points)
+    matches = tree.query_ball_tree(tree, rad)
+
+    for j, match in enumerate(matches):
+        cluster_list =[]
+        for idx in match:
+            c_id = labels[idx]
+            cluster_list.extend(c_id.split('|'))
+        cluster_key='|'.join(sorted(cluster_list))
+        cluster_counter.update({cluster_key: 1})
+
+    return cluster_counter, get_cid_dict(cluster_counter,shared=False)
+
+def iswrong(id_set):
+    stem_counter = member_counts('|'.join(list(id_set)))
+    return len(stem_counter)>1
+
+def get_cid_dict(cluster_counter,shared=True):
+    cluster_id_dict = {}
+    helper = {}
+    for i, str_cid in enumerate(cluster_counter.keys()):
+        for tid in str_cid.split('|'):
+            if shared:
+                if tid in cluster_id_dict.keys():
+                    cluster_id_dict[tid] = -42
+                else:
+                    cluster_id_dict[tid] = i
+            else:
+                if tid in cluster_id_dict.keys() and helper[tid]<len(str_cid.split('|')):
+                    cluster_id_dict[tid] = i
+                    helper[tid] = len(str_cid.split('|'))
+                else:
+                    cluster_id_dict[tid] = i
+                    helper[tid] = len(str_cid.split('|'))
+
+    return cluster_id_dict
+
+def fit_extend2(infilename, clust_count, pixels, nside, n, dt=15., rad=0.00124, new_rad=0.00124, angDeg=5.5, gi=0.4, gdoti=0.0):
+    res_dicts = get_res_dict(infilename, pixels, nside, n, angDeg=angDeg, g=gi, gdot=gdoti)
+    t_ref = util.lunation_center(n)
+    cluster_counter = Counter()
+
+
+    # For each chunk of sky in our window
+    for pix, results_d in res_dicts.items():
+
+        # Get the arrows with the old transforms (this is also kind of redundent, but pmo is roe so leave for now)
+        ot_arrows = list(_return_arrows_resuts(results_d, t_ref, [(gi,gdoti)], \
+                                            fit_tracklet_func=fit_tracklet).values())[0]
+
+        i = 0
+        ot_label_dict={}
+        combined=[]
+        for aro in ot_arrows:
+            k, cx, mx, cy, my, t = aro
+            ot_label_dict[i] = k
+            combined.append([cx, mx*dt, cy, my*dt])
+            i +=1
+
+        ot_points=np.array(combined)
+        ot_tree = scipy.spatial.cKDTree(ot_points)
+
+        # Get the nonlinear fit of the clusters in this pixel
+        fit_dict, agg_dict = _nlin_fits2(clust_count,results_d,gi,gdoti,t_ref)
+
+
+        # Note: Read the docs for explaination of this procedure
+        # for k,v in sorted(fit_dict.items(), key=lambda kv: len(kv[1][3])):
+        for k,v in fit_dict.items():
+            # k is the string cluster id and v is the fitted 6 params, fval, err, and arr_err
+            params = v[0]
+            a,adot,b,bdot,g,gdot = params
+            trkl_ids_in_cluster = set(k.split('|'))
+            # print(trkl_ids_in_cluster)
+            # if iswrong(trkl_ids_in_cluster):
+            #     print('wrong_clust',trkl_ids_in_cluster)
+            # if len(trkl_ids_in_cluster)<2:
+            #     continue
+            canidates = ot_tree.query_ball_point(params[:4],r=rad*50.) # tuneable param
+
+            if canidates !=[]:
+                nt_points = []
+                nt_label_dict = []
+                for idx in canidates:
+                    tracklet_id = ot_label_dict[idx].strip()
+                    nt_a,nt_ad,nt_b,nt_bd = fit_tracklet(t_ref, g, gdot, results_d[tracklet_id])[:4]
+                    nt_points.append(np.array((nt_a, nt_ad*2.*dt, nt_b, nt_bd*2.*dt)))
+                    nt_label_dict.append(tracklet_id)
+
+                # print(len(nt_points),len(trkl_ids_in_cluster))
+                nt_tree = scipy.spatial.cKDTree(nt_points)
+                matches = nt_tree.query_ball_point(params[:4],r=new_rad) # tuneable param
+
+                cluster_list =[]
+                for idx in matches:
+                    print(idx,matches)
+                    tracklet_id = nt_label_dict[idx].strip()
+                    cluster_list.append(tracklet_id)
+
+                if set(cluster_list)!=set():
+                    print(set(cluster_list))
+                trkl_ids_in_cluster |= set(cluster_list)
+                cluster_key='|'.join(sorted(list(trkl_ids_in_cluster)))
+                cluster_counter.update({cluster_key: 1})
+
+    return cluster_counter, get_cid_dict(cluster_counter)
+
+def _nlin_fits2(clust_count, results_d, g_init, gdot_init, t_ref):
+
+    # Create agg_dict for the specific chunk of sky
+    agg_dict = defaultdict(list)
+    for i, str_cid in enumerate(clust_count.keys()):
+        # i will be our assigned cluster id and k is the | joined tracklet id
+        for tid in str_cid.split('|'):
+            # The possibility of this exists only because results_d is a default dict (otherwise keyerror)
+            if results_d[tid]!=[]:
+                agg_dict[str_cid].append([tuple([tid]+list(obs)) for obs in results_d[tid]])
+
+    fit_dict= {}
+    # k is the str cluster id, v is the tracklets in the cluster id
+    for k, v in agg_dict.items():
+        params, func_val, chisq, chiarr = full_fit_t_loss(t_ref, g_init, gdot_init, v)
+        fit_dict[k] = (params, func_val, chisq, chiarr)
+
+    return fit_dict, agg_dict
 
 def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new_rad=0.00124, angDeg=5.5, gi=0.4, gdoti=0.0):
     """  This function takes a whole window of time (with dt=15 about a month)
@@ -339,9 +478,7 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
         # Get the nonlinear fit of the clusters in this pixel
         fit_dict, agg_dict = _nlin_fits(clust_ids,results_d,gi,gdoti,t_ref)
 
-        def iswrong(id_set):
-            stem_counter = member_counts('|'.join(list(id_set)))
-            return len(stem_counter)>1
+
         # Note: Read the docs for explaination of this procedure
         # for k,v in sorted(fit_dict.items(), key=lambda kv: len(kv[1][3])):
         for k,v in fit_dict.items():
