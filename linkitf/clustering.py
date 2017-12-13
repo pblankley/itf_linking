@@ -101,7 +101,8 @@ def error(opt_result,args,flag='chi'):
 
     return err/len(err_arr),err_arr
 
-def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM=MPC_library.Constants.GMsun):
+def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM=MPC_library.Constants.GMsun,
+                    tol=None, force_itercount=None, use_jacobian=False, method='BFGS', details=False):
     """ This function needs to take in all the observations over the cluster of
     tracklets (min of 3 tracklets), and return the a,adot,b,bdot,g and gdot.
 
@@ -113,12 +114,29 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
           gdot_init; out initial guess for gdot (the value we asserted before)
           all_obs; list of tuples, where each tuple is a observation and all the
                     observations make up at minimum 3 tracklets in a cluster.
+          tol; float, the maximum tolerance we have for error in our minimization
+          force_itercount; int, the maximum number of iterations we allow the solver
+          use_jacobian; bool, a T/F flag for whether to use the jacobian or not.
+          method; str, specifies the method used to minimize the loss. Must be one
+                    of 'COBYLA','L-BFGS-B','Powell','BFGS','TNC','dogleg',
+                    'trust-ncg','SLSQP','Newton-CG', or 'CG'.
+          details; bool, flag for the user to specify if they want the extra
+                    information about the minimization (number of iterations
+                    of the solver, and the number of function calls to the
+                    objective function, jacobian, hessian respectively.
     --------
     Returns: tuple with (parms, function min, chisq) where the first element is
                 parameters calculated by the nonlinear fit, the second is the
-                value of the loss function when completely minimized, and the third
-                value is the chisq statistic.
+                value of the loss function when completely minimized, the third
+                value is the chisq statistic, and the fourth is the array of
+                every observation in the cluster and its related error term.
+
+            NOTE: if details=True then this output has the features in the details
+                    description added to it.
     """
+    valid_methods = ['COBYLA','L-BFGS-B','Powell','BFGS','TNC','dogleg','trust-ncg','SLSQP','Newton-CG','CG']
+    if method not in valid_methods:
+        raise ValueError('Specify a valid minimization method, or leave as default')
     working_obs = [itm[1:] for ob in list_of_tracklets for itm in ob]
 
     # Left over from calculating the mean of the times of the obs to get as new ref
@@ -132,10 +150,6 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
         obs_in_trkl = [i[1:] for i in trkl]
         x0_guess.append(np.array(fit_tracklet(t_ref, g_init, gdot_init, obs_in_trkl)[:4]))
     x0_guess = np.append(np.array(x0_guess).mean(axis=0), [g_init,gdot_init])
-
-    def grad_loss(arr):
-        """ Hook for vincent to implement the gradient of the loss function below"""
-        pass
 
     def loss(arr):
         """ Loss function: aggregate the errors from the loss of the theta_x and theta_y
@@ -161,15 +175,73 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
 
         return loss
 
-    opt_out = minimize(loss,x0=np.array(x0_guess))
+    def loss_jacobian(arr):
+        """ The analytical jacobian of the loss function.
+        ---------
+        Args: NOTE: uses the global variable 'args'
+              arr; the array of the a, adot, b, bdot, g, gdot values we are
+                    tuning to minimize this loss function.
+        ---------
+        Returns: numpy array length 6, the derivative of the loss function  with
+                    respect to each of the 6 parameters.
+        """
+        md = np.array(args)
+        L = md[:,4] #theta_x
+        M = md[:,5] #theta_y
+        t = md[:,3] #t_emit
+        x = md[:,0]
+        y = md[:,1]
+        z = md[:,2]
+
+        a,b,c,h,f,k = arr
+        der_a = (2*(a+b*t-f*x+L*(-1-k*t+f*z)))/(1+k*t-f*z)**2
+        der_b = (-2*t*(-a+L-b*t+k*L*t+f*x-f*L*z))/(1+k*t-f*z)**2
+        der_c = (2*(c+h*t-f*y+M*(-1-k*t+f*z)))/(1+k*t-f*z)**2
+        der_h = (-2*t*(-c+M-h*t+k*M*t+f*y-f*M*z))/(1+k*t-f*z)**2
+        der_f = 2*(-(((a+b*t-f*x)*z)/(1+k*t-f*z)**2)+x/(1+k*t-f*z))*(L-(a+b*t-f*x)/(1+k*t-f*z))+2*(-(((c+h*t-f*y)*z)/(1+k*t-f*z)**2)+y/(1+k*t-f*z))*(M-(c+h*t-f*y)/(1+k*t-f*z))
+        der_g = (2*t*(a+b*t-f*x)*(L-(a+b*t-f*x)/(1+k*t-f*z)))/(1+k*t-f*z)**2+(2*t*(c+h*t-f*y)*(M-(c+h*t-f*y)/(1+k*t-f*z)))/(1+k*t-f*z)**2
+
+        return np.array([der_a.sum(), der_b.sum(), der_c.sum(), der_h.sum(), der_f.sum(), der_g.sum()])
+
+    min_options = {}
+    if force_itercount!=None:
+        min_options['maxiter'] = force_itercount
+        # Additional options to enforce fixed number of iterations, based on solvers
+        tol = 0
+        if method=='CG':
+            min_options['gtol'] = 0
+        if method in ['Powell','Newton-CG','TNC']:
+            min_options['xtol'] = 0
+        if method in ['Powell','L-BFGS-B','TNC','SLSQP']:
+            min_options['ftol'] = 0
+        if method in ['CG','BFGS','L-BFGS-B','TNC','dogleg','trust-ncg']:
+            min_options['gtol'] = 0
+        if method in ['Powell']:
+            min_options['maxfev'] = 10e8
+        if method in ['L-BFGS-B']:
+            min_options['maxfun'] = 10e8
+        if method in ['COBYLA']:
+            min_options['tol'] = 0
+            min_options['catol'] = 0
+
+    jc = loss_jacobian if use_jacobian else None
+
+    opt_out = minimize(loss,x0=np.array(x0_guess), method=method, tol=tol, options=min_options, jac=jc)
 
     # calc chi sq
     err,err_arr = error(opt_out.x,args,flag=flag)
 
-    # print('init',x0_guess)
-    # print('diff',[abs(i-j) for i,j in zip(x0_guess,opt_out.x)])
-    # print('everything',opt_out)
-    return opt_out.x, opt_out.fun, err, err_arr
+    nit = (opt_out.nit if 'nit' in opt_out else math.nan)
+    njev = (opt_out.njev if 'njev' in opt_out else math.nan)
+    nhev = (opt_out.nhev if 'nhev' in opt_out else math.nan)
+
+    # Number of iterations performed by the solver,
+    # number of evaluations of the objective function, jacobian, hessian
+    additional_returns = [nit,opt_out.nfev,njev,nhev]
+    def_return = [opt_out.x, opt_out.fun, err, err_arr]
+    if details:
+        def_return.extend(additional_returns)
+    return tuple(def_return)
 
 def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new_rad=0.00248, angDeg=5.5, gi=0.4, gdoti=0.0):
     """  This function takes a whole window of time (with dt=15 about a month)
@@ -196,7 +268,7 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
           rad; the best rad value, based on dt=15 we calculated rad to be 0.00124
                 so that is the default value.
           new_rad; the radius we use to cluster once we transform the approximately
-                    close points with the fitted g and gdot.  Defaults to 2(rad)=0.0248. 
+                    close points with the fitted g and gdot.  Defaults to 2(rad)=0.0248.
           angDeg; float, the angle in degrees
           gi; float; the initial, asserted gamma value (distance from observer to the asteroid)
           gdoti; float; the initial, asserted gamma dot value of radial velocity.
