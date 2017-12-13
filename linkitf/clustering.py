@@ -102,7 +102,7 @@ def error(opt_result,args,flag='chi'):
     return err/len(err_arr),err_arr
 
 def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM=MPC_library.Constants.GMsun,
-                    tol=None, force_itercount=None, use_jacobian=False, method='BFGS', details=False):
+                    tol=None, force_itercount=None, use_jacobian=True, method='BFGS', details=False):
     """ This function needs to take in all the observations over the cluster of
     tracklets (min of 3 tracklets), and return the a,adot,b,bdot,g and gdot.
 
@@ -241,9 +241,9 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
     def_return = [opt_out.x, opt_out.fun, err, err_arr]
     if details:
         def_return.extend(additional_returns)
-    # print('init guess',x0_guess)
-    # print('result',opt_out.x)
-    # print('diff',[abs(x-o) for x,o in zip(x0_guess,opt_out.x)])
+    print('init guess',x0_guess)
+    print('result',opt_out.x)
+    print('diff',[abs(x-o) for x,o in zip(x0_guess,opt_out.x)])
     return tuple(def_return)
 
 def cluster_clusters(clust_ids, results_d, g_init, gdot_init, t_ref, rad):
@@ -339,13 +339,21 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
         # Get the nonlinear fit of the clusters in this pixel
         fit_dict, agg_dict = _nlin_fits(clust_ids,results_d,gi,gdoti,t_ref)
 
+        def iswrong(id_set):
+            stem_counter = member_counts('|'.join(list(id_set)))
+            return len(stem_counter)>1
         # Note: Read the docs for explaination of this procedure
-        for k,v in sorted(fit_dict.items(), key=lambda kv: len(kv[1][3])):
+        # for k,v in sorted(fit_dict.items(), key=lambda kv: len(kv[1][3])):
+        for k,v in fit_dict.items():
             # k is the cluster id and v is the fitted 6 params, fval, err, and arr_err
             params = v[0]
             a,adot,b,bdot,g,gdot = params
             trkl_ids_in_cluster = set([i[0] for tracklet in agg_dict[k] for i in tracklet])
-
+            # print(trkl_ids_in_cluster)
+            if iswrong(trkl_ids_in_cluster):
+                print('wrong_clust',trkl_ids_in_cluster)
+            if len(trkl_ids_in_cluster)<2:
+                continue
             canidates = ot_tree.query_ball_point(params[:4],r=rad*50.) # tuneable param
 
             if canidates !=[]:
@@ -357,15 +365,18 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
                     nt_points.append(np.array((nt_a, nt_ad*dt, nt_b, nt_bd*dt)))
                     nt_label_dict.append(tracklet_id)
 
+                # print(len(nt_points),len(trkl_ids_in_cluster))
                 nt_tree = scipy.spatial.cKDTree(nt_points)
                 matches = nt_tree.query_ball_point(params[:4],r=new_rad) # tuneable param
 
                 cluster_list =[]
                 for idx in matches:
+                    print(idx,matches)
                     tracklet_id = nt_label_dict[idx].strip()
                     cluster_list.append(tracklet_id)
                     cluster_id_dict.update({tracklet_id: k})
-
+                if set(cluster_list)!=set():
+                    print(set(cluster_list))
                 trkl_ids_in_cluster |= set(cluster_list)
                 cluster_key='|'.join(sorted(trkl_ids_in_cluster))
                 cluster_counter.update({cluster_key: 1})
