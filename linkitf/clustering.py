@@ -149,67 +149,45 @@ def prelim_fit(obsarray,pout):
 
     return pres, covar
 
-
-def chisq(opt_result,args,flag='chi'):
-    """ calc the chi sq for the result of the minimization function.
-    returns the agg chi sq and the chi sq array on a observation level
-    """
-    vflag = ('chi','rms')
-    if flag not in vflag:
-        raise ValueError('flag not in valid flags try rms or chi')
-    if flag=='chi':
-        chi,var_chi=0.0,(0.2/205625.)**2 # in radians (from arcseconds)
-    if flag=='rms':
-        chi,var_chi=0.0,(1./205625.)**2
-
-    a,adot,b,bdot,g,gdot = opt_result
-    chi_arr = []
-    for arg in args:
-        xe, ye, ze, t_emit, theta_x, theta_y = arg
-        tx = (a + adot*t_emit - g*xe)/(1 + gdot*t_emit - g*ze)
-        ty = (b + bdot*t_emit - g*ye)/(1 + gdot*t_emit - g*ze)
-        if flag=='rms':
-            calc_chi = np.sqrt((theta_x-tx)**2/var_chi + (theta_y-ty)**2/var_chi)
-        elif flag=='chi':
-            calc_chi = (theta_x-tx)**2/var_chi + (theta_y-ty)**2/var_chi
-        chi += calc_chi
-        chi_arr.append(calc_chi)
-
-    return chi/len(chi_arr),chi_arr
-
-def vis_arrows_by_rms(params_dict,c_res):
+def vis_cluster_arrows_err(params_dict,c_res,log=False,subdir=''):
     """ This function plots arrows (just cluster fits).  The color is
     given by the rms value for each cluster fit.
     """
     arrows = []
     for v,ch in zip(params_dict.values(),c_res):
-        # k represents cluster id and v represents the related a adot,b,bdot,g,g_dot
-        arrows.append(list(v[:4])+[ch])
+        # v represents the related a adot,b,bdot,g,g_dot
+        if log:
+            arrows.append(list(v[:4])+[np.log(ch)])
+        else:
+            arrows.append(list(v[:4])+[ch])
     a,adot,b,bdot,colors = np.split(np.array(arrows),5,axis=1)
 
-    # colormap = mlc.ListedColormap (['grey','blue','red'])
     colormap = cm.viridis
     fig,ax=plt.subplots(figsize=(18, 16))
 
     Q = ax.quiver(a, b, adot, bdot, colors, cmap=colormap,scale=0.3, width=0.0003)
-    # ax.quiverkey(Q, X, Y, U, label,)
     plt.colorbar(Q,ax=ax)
-    # plt.xlim(-0.1, 0.1)
-    # plt.ylim(-0.1, 0.1)
+
+    plt.xlim(-0.2, 0.2)
+    plt.ylim(-0.2, 0.2)
     plt.xlabel('alpha')
     plt.ylabel('beta')
-    plt.title('Arrows (just cluster centers) colored by the rms value')
-    plt.savefig('arrows_with_rms_color.pdf')
-    # plt.show()
+    if log:
+        plt.title('Arrows (just cluster centers) colored by the log error value')
+    else:
+        plt.title('Arrows (just cluster centers) colored by the error value')
+    plt.savefig('{}cluster_arrows_color.pdf'.format(subdir))
 
-def vis_arrows_by_chi_with_trkl(params_dict, agg_dict, idxs, t_ref, chi_res, g_init=0.4, gdot_init=0.0,label='None'):
+def vis_cluster_tracklet_arrows(params_dict, agg_dict, idxs, t_ref, c_res, g_init=0.4, \
+                                    gdot_init=0.0,label='None',size=6,log=False,subdir=''):
     """ This function plots arrows (both the cluster fits and the original tracklets).  The color is
     given by the log transform of the chi_sq value for each cluster fit (the tracklets are all grey).
-    the label tag tells the function which labels to display. options are ['None','ggdot','id','chi']
+    the label tag tells the function which labels to display. options are ['None','ggdot','id','error']
     """
-    valid_labels = ['None','ggdot','id','chi']
+    valid_labels = ['None','ggdot','id','error']
     if label not in valid_labels:
-        raise ValueError('put in a valid lablel ; read docs')
+        raise ValueError('put in a valid lablel. one of {}'.format(valid_labels))
+
     a,adot,b,bdot,colors = [],[],[],[],[]
     arrows,g_gdots = [],[]
     cluster_tracklet_level = []
@@ -221,53 +199,57 @@ def vis_arrows_by_chi_with_trkl(params_dict, agg_dict, idxs, t_ref, chi_res, g_i
     if len(params_dict)!= len(cluster_tracklet_level):
         raise ValueError('the length of the cluster params {0} is different from the number of ids \
                             passed for agg_dict {1}'.format(len(params_dict),len(cluster_tracklet_level)))
-    for k,v,ch in zip(params_dict.keys(),params_dict.values(),chi_res):
+
+    for k,v,ch in zip(params_dict.keys(),params_dict.values(),c_res):
         # k represents cluster id and v represents the related a adot,b,bdot,g,g_dot
-        arrows.append(list(v[:4])+[np.log(ch)])
+        if log:
+            arrows.append(list(v[:4])+[np.log(ch)])
+        else:
+            arrows.append(list(v[:4])+[ch])
         g_gdots.append((k,v[4:]))
-    # for clust_trkls,cparams in zip(cluster_tracklet_level,params_dict.values()):
-    #     g_cl,gdot_cl = cparams[-2:]
-    #     for trkl in clust_trkls:
-    #         obs_in_trkl = [i[1:] for i in trkl]
-    #         arrows.append(list(fit_tracklet(t_ref, g_cl, gdot_cl, obs_in_trkl)[:4])+[1])
+
     cl_trk_arrows = []
     for clust_trkls in cluster_tracklet_level:
         for trkl in clust_trkls:
             obs_in_trkl = [i[1:] for i in trkl]
             cl_trk_arrows.append(list(fit_tracklet(t_ref, g_init, gdot_init, obs_in_trkl)[:4])+[1])
-    # print(arrows)
-    # print([a for a in arrows if a[-1]==10])
+
     ac,adotc,bc,bdotc,colorsc = np.split(np.array(cl_trk_arrows),5,axis=1)
     a,adot,b,bdot,colors = np.split(np.array(arrows),5,axis=1)
 
-    # colormap = mlc.ListedColormap (['grey','blue','red'])
     colormap = cm.viridis
     fig,ax=plt.subplots(figsize=(18, 16))
 
     Q = ax.quiver(a, b, adot, bdot, colors, cmap=colormap,scale=0.3, width=0.0003)
-    # ax.quiver(ac,bc,adotc,bdotc,colorsc,cmap=cm.gray, scale=0.3, width=0.0003, alpha=0.3)
     ax.quiver(ac,bc,adotc,bdotc, scale=0.3, width=0.0003, alpha=0.3)
+
     if label!='None':
-        for pa,pb,pad,pbd,ggd,ch in zip(a, b, adot, bdot, g_gdots, chi_res):
+        for pa,pb,pad,pbd,ggd,ch in zip(a, b, adot, bdot, g_gdots, c_res):
             if label=='ggdot':
                 lab = 'g: {0:.6f}, gdot: {1:.6f}'.format(ggd[1][0],ggd[1][1])
             if label=='id':
                 lab = 'id:%s'%ggd[0]
-            if label=='chi':
-                lab = 'chi: {}'.format(ch)
-            if -0.1<pa[0]<0.1 and -0.1<pb[0]<0.1:
-                plt.quiverkey(Q, X=pa[0], Y=pb[0], U=pad[0],label=lab, coordinates='data')
+            if label=='error':
+                lab = 'error: {}'.format(ch)
+            if -0.2<pa[0]<0.2 and -0.2<pb[0]<0.2:
+                plt.quiverkey(Q, X=pa[0], Y=pb[0], U=pad[0],label=lab, coordinates='data',fontproperties={'size': size})
+
     plt.colorbar(Q,ax=ax)
     plt.xlim(-0.2, 0.2)
     plt.ylim(-0.2, 0.2)
     plt.xlabel('alpha')
     plt.ylabel('beta')
-    plt.title('Arrows colored by the log transform of the chi squared value. tracklets are overlayed in light grey')
-    plt.savefig('arrows_with_chi_and_trkl_label_{}.pdf'.format(label))
-    # plt.show()
-    return g_gdots
+    if log:
+        plt.title('Arrows colored by the log transform of the error values. Tracklets are overlayed in light grey')
+    else:
+        plt.title('Arrows colored by the error values. Tracklets are overlayed in light grey')
+    if log:
+        plt.savefig('{0}cluster_tracklet_arrows_label_{1}_log.pdf'.format(subdir,label))
+    else:
+        plt.savefig('{0}cluster_tracklet_arrows_label_{1}.pdf'.format(subdir,label))
+    # return g_gdots
 
-def visualize(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gdot_init=0.0):
+def vis_cluster_tracklet_diff(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gdot_init=0.0,subdir=''):
     """ This function displays and saves a quiver plot with the arrows form our
     fitted clusters (passed in params_dict), and our original measures passed in
     agg_dict (only the entries with the realted cluster id's passed in idxs).
@@ -301,11 +283,9 @@ def visualize(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gdot_init=0.0):
         for trkl in clust_trkls:
             obs_in_trkl = [i[1:] for i in trkl]
             arrows.append(list(fit_tracklet(t_ref, g_init, gdot_init, obs_in_trkl)[:4])+[100])
-    # print(arrows)
-    # print([a for a in arrows if a[-1]==10])
+
     a,adot,b,bdot,colors = np.split(np.array(arrows),5,axis=1)
 
-    # colormap = mlc.ListedColormap (['grey','blue','red'])
     colormap = cm.cool
     fig,ax=plt.subplots(figsize=(18, 16))
 
@@ -317,9 +297,34 @@ def visualize(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gdot_init=0.0):
     plt.xlabel('alpha')
     plt.ylabel('beta')
     plt.title('Arrows with orbit fit. Darker colors represent fitted clusters, and lighter clusters represent individual tracklets.')
-    plt.savefig('arrows_with_orb_fit.pdf')
-    # plt.show()
+    plt.savefig('{}cluster_tracklet_diff.pdf'.format(subdir))
 
+def chisq(opt_result,args,flag='chi'):
+    """ calc the chi sq for the result of the minimization function.
+    returns the agg chi sq and the chi sq array on a observation level
+    """
+    vflag = ('chi','rms')
+    if flag not in vflag:
+        raise ValueError('flag not in valid flags try rms or chi')
+    if flag=='chi':
+        chi,var_chi=0.0,(0.2/205625.)**2 # in radians (from arcseconds)
+    if flag=='rms':
+        chi,var_chi=0.0,(1./205625.)**2
+
+    a,adot,b,bdot,g,gdot = opt_result
+    chi_arr = []
+    for arg in args:
+        xe, ye, ze, t_emit, theta_x, theta_y = arg
+        tx = (a + adot*t_emit - g*xe)/(1 + gdot*t_emit - g*ze)
+        ty = (b + bdot*t_emit - g*ye)/(1 + gdot*t_emit - g*ze)
+        if flag=='rms':
+            calc_chi = np.sqrt((theta_x-tx)**2/var_chi + (theta_y-ty)**2/var_chi)
+        elif flag=='chi':
+            calc_chi = (theta_x-tx)**2/var_chi + (theta_y-ty)**2/var_chi
+        chi += calc_chi
+        chi_arr.append(calc_chi)
+
+    return chi/len(chi_arr),chi_arr
 
 def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, GM=MPC_library.Constants.GMsun):
     """ This function needs to take in all the observations over the cluster of
@@ -394,7 +399,7 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
     # for each chunk of sky in our window
     for pix, results_d in res_dict.items():
 
-        # get the arrows with the old transforms
+        # get the arrows with the old transforms (this is also kind of redundent, but pmo is roe so leave for now)
         ot_arrows = list(_return_arrows_resuts(results_d, t_ref, [(gi,gdoti)], \
                                             fit_tracklet_func=fit_tracklet).values())[0]
         i = 0
