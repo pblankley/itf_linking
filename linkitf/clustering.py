@@ -302,15 +302,16 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
         ot_tree = scipy.spatial.cKDTree(ot_points)
 
         # Get the nonlinear fit of the clusters in this pixel
-        fit_dict = _nlin_fits(clust_ids,results_d,gi,gdoti,t_ref)
+        fit_dict, agg_dict = _nlin_fits(clust_ids,results_d,gi,gdoti,t_ref)
 
         # Note: Read the docs for explaination of this procedure
         for k,v in fit_dict.items():
-            # k is the cluster id and v is the fitted 6 params
-            a,adot,b,bdot,g,gdot = v
+            # k is the cluster id and v is the fitted 6 params, fval, err, and arr_err
+            params = v[0]
+            a,adot,b,bdot,g,gdot = params
             trkl_ids_in_cluster = set([i[0] for tracklet in agg_dict[k] for i in tracklet])
 
-            canidates = ot_tree.query_ball_point(v[:4],r=rad*50.) # tuneable param
+            canidates = ot_tree.query_ball_point(params[:4],r=rad*50.) # tuneable param
 
             if canidates !=[]:
                 nt_points = []
@@ -321,7 +322,7 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
                     nt_label_dict.append(tracklet_id)
 
                 nt_tree = scipy.spatial.cKDTree(nt_points)
-                matches = nt_tree.query_ball_point(v[:4],r=new_rad) # tuneable param
+                matches = nt_tree.query_ball_point(params[:4],r=new_rad) # tuneable param
 
                 cluster_list =[]
                 for idx in matches:
@@ -367,9 +368,9 @@ def _nlin_fits(clust_ids, results_d, g_init, gdot_init, t_ref):
     # k is the cluster id, v is the tracklets in the cluster id
     for k, v in agg_dict.items():
         params, func_val, chisq, chiarr = full_fit_t_loss(t_ref, g_init, gdot_init, v)
-        fit_dict[k] = params
+        fit_dict[k] = (params, func_val, chisq, chiarr)
 
-    return fit_dict
+    return fit_dict, agg_dict
 
 def get_res_dict(infilename, pixels, nside, n, angDeg=5.5, g=0.4, gdot=0.0):
     """ Function to get the results dict object from a given file name. The
