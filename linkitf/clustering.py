@@ -134,7 +134,7 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
             NOTE: if details=True then this output has the features in the details
                     description added to it.
     """
-    valid_methods = ['COBYLA','L-BFGS-B','Powell','BFGS','TNC','dogleg','trust-ncg','SLSQP','Newton-CG','CG']
+    valid_methods = ['Nelder-Mead','COBYLA','L-BFGS-B','Powell','BFGS','TNC','dogleg','trust-ncg','SLSQP','Newton-CG','CG']
     if method not in valid_methods:
         raise ValueError('Specify a valid minimization method, or leave as default')
     working_obs = [itm[1:] for ob in list_of_tracklets for itm in ob]
