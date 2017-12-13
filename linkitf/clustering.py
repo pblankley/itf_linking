@@ -26,6 +26,7 @@ import matplotlib.colors as mlc
 import matplotlib.cm as cm
 import util
 from copy import copy
+import pdb
 
 Observatories = MPC_library.Observatories
 
@@ -47,6 +48,7 @@ def fit_tracklet(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
     Returns: tuple, with (a, adot, b, bdot and t_emit) as the values.
                 These values are on the tracklet level.
     """
+    # pdb.set_trace()
     t_emit = [(obs[0]-obs[1]-t_ref) for obs in v]
     acc_z = -GM*g*g
     fac =[(1.0 + gdot*t + 0.5*g*acc_z*t*t - g*obs[7]) for obs, t in zip(v, t_emit)]
@@ -382,9 +384,9 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, GM=MPC_library
     return opt_out.x, opt_out.fun, csq,csq_arr
 
 # results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
-def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, angDeg=5.5, gi=0.4, gdoti=0.0):
+def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new_rad=0.00248, angDeg=5.5, gi=0.4, gdoti=0.0):
     """ Not a real this yet.. still in progress wrapper for doing the whole nlin fit process"""
-    res_dict = get_res_dict(infilename, pixels, nside, n, angDeg=angDeg, gi=g, gdoti=gdot)
+    res_dict = get_res_dict(infilename, pixels, nside, n, angDeg=angDeg, g=gi, gdot=gdoti)
     t_ref = util.lunation_center(n)
     cluster_counter = Counter()
     cluster_id_dict = copy(clust_ids)
@@ -393,12 +395,13 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, ang
     for pix, results_d in res_dict.items():
 
         # get the arrows with the old transforms
-        ot_arrows = _return_arrows_resuts(results_dict, t_ref, [(gi,gdoti)], \
-                                            fit_tracklet_func=fit_tracklet).values()
+        ot_arrows = list(_return_arrows_resuts(results_d, t_ref, [(gi,gdoti)], \
+                                            fit_tracklet_func=fit_tracklet).values())[0]
         i = 0
-        label_dict={}
+        ot_label_dict={}
         combined=[]
-        for k, cx, mx, cy, my, t in ot_arrows:
+        for aro in ot_arrows:
+            k, cx, mx, cy, my, t = aro
             ot_label_dict[i] = k
             combined.append([cx, mx*dt, cy, my*dt])
             i +=1
@@ -409,10 +412,13 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, ang
         agg_dict = defaultdict(list)
         for k,v in clust_ids.items():
             # k is the tracklet id, v is the cluster id
-            agg_dict[v].append([tuple([k]+list(i)) for i in results_d[k]])
+
+            # the possibility of this exists only because results_d is a default dict (otherwise keyerror)
+            if results_d[k]!=[]:
+                agg_dict[v].append([tuple([k]+list(i)) for i in results_d[k]])
 
         # get the nonlinear fit of the clusters in this pixel
-        fit_dict, results = nlin_fits(agg_dict,g,gdot,t_ref)
+        fit_dict = nlin_fits(agg_dict,gi,gdoti,t_ref)
 
         # for each cluster check the nearness of the surrounding
         # points in the old transform and pick canidates to get transformed
@@ -426,67 +432,42 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, ang
             a,adot,b,bdot,g,gdot = v
             trkl_ids_in_cluster = set([i[0] for tracklet in agg_dict[k] for i in tracklet])
 
-            canidates = ot_tree.query_ball_point(v[:4],r=rad*10.) # tuneable param
+            canidates = ot_tree.query_ball_point(v[:4],r=rad*50.) # tuneable param
 
+            if canidates !=[]:
+                # print(canidates)
+                nt_points = []
+                nt_label_dict = []
+                for idx in canidates:
+                    tracklet_id = ot_label_dict[idx].strip()
+                    nt_points.append(np.array(fit_tracklet(t_ref, g, gdot, results_d[tracklet_id])[:4]))
+                    nt_label_dict.append(tracklet_id)
 
-            nt_points = []
-            nt_label_dict = []
-            for idx in canidates:
-                tracklet_id = label_dict[idx].strip()
-                nt_points.append(np.array(fit_tracklet(t_ref, g, gdot, results_d[tracklet_id])[:4]))
-                nt_label_dict.append(tracklet_id)
+                nt_tree = scipy.spatial.cKDTree(nt_points)
+                matches = nt_tree.query_ball_point(v[:4],r=new_rad) # tuneable param
 
-            nt_tree = scipy.spatial.cKDTree(nt_points)
-            matches = nt_tree.query_ball_point(v[:4],r=rad*2.) # tuneable param
-
-            cluster_list =[]
-            for idx in matches:
-                tracklet_id = nt_label_dict[idx].strip()
-                cluster_list.append(tracklet_id)
-                cluster_id_dict.update({tracklet_id: k})
-            trkl_ids_in_cluster |= set(cluster_list)
-            cluster_key='|'.join(sorted(trkl_ids_in_cluster))
-            cluster_counter.update({cluster_key: 1})
+                cluster_list =[]
+                for idx in matches:
+                    tracklet_id = nt_label_dict[idx].strip()
+                    cluster_list.append(tracklet_id)
+                    cluster_id_dict.update({tracklet_id: k})
+                # print(set(cluster_list))
+                trkl_ids_in_cluster |= set(cluster_list)
+                cluster_key='|'.join(sorted(trkl_ids_in_cluster))
+                cluster_counter.update({cluster_key: 1})
 
 
     return cluster_counter, cluster_id_dict
 
 def nlin_fits(agg_dict, g_init, gdot_init, t_ref):
     """ helper for nlin fits"""
-    fit_dict,trkl_dict,results = {},[]
+    fit_dict= {}
     # k is the cluster id, v is the tracklets in the cluster id
     for k, v in agg_dict.items():
         params, func_val, chisq, chiarr = full_fit_t_loss(t_ref, g_init, gdot_init, v)
-        results.append(params)
         fit_dict[k] = params
-        for ob in v:
-            ob[0]
-    return fit_dict, results
-#     for clust_id, arrows in fit_dict.items():
-#
-#         i = 0
-#         label_dict={}
-#         combined=[]
-#         for k, cx, mx, cy, my, t in arrows:
-#             label_dict[i] = k
-#             combined.append([cx, mx*dt, cy, my*dt])
-#             i +=1
-#         points=np.array(combined)
-#
-#         tree = scipy.spatial.cKDTree(points)
-#         matches = tree.query_ball_tree(tree, rad)
-#
-#         for j, match in enumerate(matches):
-#             if len(match)>=mincount:
-#                 cluster_list =[]
-#                 for idx in match:
-#                     tracklet_id = label_dict[idx].strip()
-#                     cluster_list.append(tracklet_id)
-#                     cluster_id_dict.update({tracklet_id: j})
-#                 cluster_key='|'.join(sorted(cluster_list))
-#                 cluster_counter.update({cluster_key: 1})
-#
-# return cluster_counter, cluster_id_dict
+    return fit_dict#, results
+
 
 # results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
 def full_fit_trkl(t_ref, g_init, gdot_init,  all_obs, GM=MPC_library.Constants.GMsun):
@@ -560,7 +541,7 @@ def get_res_dict(infilename, pixels, nside, n, angDeg=5.5, g=0.4, gdot=0.0):
 
     master_dict = {}
     for i in pixels:
-        vec = hp.pix2vec(nside, pix, nest=True)
+        vec = hp.pix2vec(nside, i, nest=True)
         neighbors = hp.query_disc(nside, vec, angDeg*np.pi/180., inclusive=True, nest=True)
         lines = []
 
