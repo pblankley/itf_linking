@@ -63,270 +63,45 @@ def fit_tracklet(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
         # a     adot b  bdot  dt (change in time)
     return (cx, mx, cy, my, t_emit[0])
 
-
-# results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
-def kbo2d_linear(pin, obs, t_ref):
-    """Linearized version of the 2d projection of orbital position.  Only
-       leading-order terms for each parameter's derivative are given.
-       The derivative with respect to gdot is inserted here - note that
-       it is much smaller than the others, and is the only part of the
-       derivatives that has any dependence upon the incoming PBASIS.
-    """
-    jd_tdb, dlt, theta_x,theta_y,theta_z,xe,ye,ze = obs
-    a,adot,b,bdot,g,gdot = pin
-    t_emit = obs[0]-obs[1]-t_ref
-    #Account for light-travel time differentially to leading order
-    #by retarding KBO motion by z component of Earth's position.
-    #Note: ignoring acceleration here.
-    # t_emit = obs->obstime - ze/SPEED_OF_LIGHT;
-
-    x = a + adot*t_emit - g * xe
-    - gdot * (adot*t_emit*t_emit - g*xe*t_emit)
-    y = b + bdot*t_emit - g * ye
-    - gdot * (bdot*t_emit*t_emit - g*ye*t_emit)
-
-    dx=np.zeros(6)
-    dy=np.zeros(6)
-
-    dx[1] = dy[3] = 1.
-    dx[2] = dy[4] = t_emit
-    dx[5] = -xe
-    dy[5] = -ye
-    dx[6] = -(adot*t_emit*t_emit - g*xe*t_emit)
-    dy[6] = -(bdot*t_emit*t_emit - g*ye*t_emit)
-
-    return x,y,dx,dy
-
-
-def prelim_fit(obsarray,pout):
-    """Take a set of observations and make a preliminary fit using the
-     linear model of the orbit.  Then fill in zero for gdot, and return
-     the fit and an uncertainty matrix.  The gdot term of uncertainty
-     matrix is set to a nominal value.
-     Note covar is assumed to be 6x6 1-indexed matrix a la Numerical Recipes.
-    """
-    beta=np.zeros(6)
-    alpha=np.zeros((6,6))
-
-    # Collect the requisite sums
-    for ob in obsarray:
-        # not sure why the original had this? if(obsarray[i].reject==0)
-
-        wtx = 1./ob.dthetax
-        wtx *= wtx
-        wty = 1./ob.dthetay
-        wty *= wty
-
-        x,y,dx,dy = kbo2d_linear(pout,ob,t_ref);
-        """Note that the dx[6] and dy[6] terms will only make
-        even the least sense if the g and adot were set to
-        some sensible value beforehand.
-        """
-
-        for j in range(6):
-          beta[j] += ob.thetax * dx[j] * wtx;
-          beta[j] += ob.thetay * dy[j] * wty;
-          for k in range(j+1):
-              alpha[j][k] += dx[j]*dx[k]*wtx;
-              alpha[j][k] += dy[j]*dy[k]*wty;
-
-    """ Symmetrize and invert the alpha matrix to give covar.  Note
-    that I'm only going to bother with the first 5 params.
-    """
-    for i in range(5):
-      for j in range(i):
-          alpha[j][i]=alpha[i][j];
-
-    covar = np.linalg.inv(alpha)
-    soln = np.dot(covar, beta)
-
-    pres = np.append(soln,0.0)
-
-    # Set the gdot parts of the covariance matrix to nominal values
-    for i in range(6):
-        covar[i][5]=covar[5][i]=0.;
-    covar[5][5]=0.1*TPI*TPI*g**3
-
-    return pres, covar
-
-def vis_cluster_arrows_err(params_dict,c_res,log=False,subdir=''):
-    """ This function plots arrows (just cluster fits).  The color is
-    given by the rms value for each cluster fit.
-    """
-    arrows = []
-    for v,ch in zip(params_dict.values(),c_res):
-        # v represents the related a adot,b,bdot,g,g_dot
-        if log:
-            arrows.append(list(v[:4])+[np.log(ch)])
-        else:
-            arrows.append(list(v[:4])+[ch])
-    a,adot,b,bdot,colors = np.split(np.array(arrows),5,axis=1)
-
-    colormap = cm.viridis
-    fig,ax=plt.subplots(figsize=(18, 16))
-
-    Q = ax.quiver(a, b, adot, bdot, colors, cmap=colormap,scale=0.3, width=0.0003)
-    plt.colorbar(Q,ax=ax)
-
-    plt.xlim(-0.2, 0.2)
-    plt.ylim(-0.2, 0.2)
-    plt.xlabel('alpha')
-    plt.ylabel('beta')
-    if log:
-        plt.title('Arrows (just cluster centers) colored by the log error value')
-    else:
-        plt.title('Arrows (just cluster centers) colored by the error value')
-    plt.savefig('{}cluster_arrows_color.pdf'.format(subdir))
-
-def vis_cluster_tracklet_arrows(params_dict, agg_dict, idxs, t_ref, c_res, g_init=0.4, \
-                                    gdot_init=0.0,label='None',size=6,log=False,subdir=''):
-    """ This function plots arrows (both the cluster fits and the original tracklets).  The color is
-    given by the log transform of the chi_sq value for each cluster fit (the tracklets are all grey).
-    the label tag tells the function which labels to display. options are ['None','ggdot','id','error']
-    """
-    valid_labels = ['None','ggdot','id','error']
-    if label not in valid_labels:
-        raise ValueError('put in a valid lablel. one of {}'.format(valid_labels))
-
-    a,adot,b,bdot,colors = [],[],[],[],[]
-    arrows,g_gdots = [],[]
-    cluster_tracklet_level = []
-
-    for k,v in agg_dict.items():
-        if k in idxs:
-            cluster_tracklet_level.append(v)
-
-    if len(params_dict)!= len(cluster_tracklet_level):
-        raise ValueError('the length of the cluster params {0} is different from the number of ids \
-                            passed for agg_dict {1}'.format(len(params_dict),len(cluster_tracklet_level)))
-
-    for k,v,ch in zip(params_dict.keys(),params_dict.values(),c_res):
-        # k represents cluster id and v represents the related a adot,b,bdot,g,g_dot
-        if log:
-            arrows.append(list(v[:4])+[np.log(ch)])
-        else:
-            arrows.append(list(v[:4])+[ch])
-        g_gdots.append((k,v[4:]))
-
-    cl_trk_arrows = []
-    for clust_trkls in cluster_tracklet_level:
-        for trkl in clust_trkls:
-            obs_in_trkl = [i[1:] for i in trkl]
-            cl_trk_arrows.append(list(fit_tracklet(t_ref, g_init, gdot_init, obs_in_trkl)[:4])+[1])
-
-    ac,adotc,bc,bdotc,colorsc = np.split(np.array(cl_trk_arrows),5,axis=1)
-    a,adot,b,bdot,colors = np.split(np.array(arrows),5,axis=1)
-
-    colormap = cm.viridis
-    fig,ax=plt.subplots(figsize=(18, 16))
-
-    Q = ax.quiver(a, b, adot, bdot, colors, cmap=colormap,scale=0.3, width=0.0003)
-    ax.quiver(ac,bc,adotc,bdotc, scale=0.3, width=0.0003, alpha=0.3)
-
-    if label!='None':
-        for pa,pb,pad,pbd,ggd,ch in zip(a, b, adot, bdot, g_gdots, c_res):
-            if label=='ggdot':
-                lab = 'g: {0:.6f}, gdot: {1:.6f}'.format(ggd[1][0],ggd[1][1])
-            if label=='id':
-                lab = 'id:%s'%ggd[0]
-            if label=='error':
-                lab = 'error: {}'.format(ch)
-            if -0.2<pa[0]<0.2 and -0.2<pb[0]<0.2:
-                plt.quiverkey(Q, X=pa[0], Y=pb[0], U=pad[0],label=lab, coordinates='data',fontproperties={'size': size})
-
-    plt.colorbar(Q,ax=ax)
-    plt.xlim(-0.2, 0.2)
-    plt.ylim(-0.2, 0.2)
-    plt.xlabel('alpha')
-    plt.ylabel('beta')
-    if log:
-        plt.title('Arrows colored by the log transform of the error values. Tracklets are overlayed in light grey')
-    else:
-        plt.title('Arrows colored by the error values. Tracklets are overlayed in light grey')
-    if log:
-        plt.savefig('{0}cluster_tracklet_arrows_label_{1}_log.pdf'.format(subdir,label))
-    else:
-        plt.savefig('{0}cluster_tracklet_arrows_label_{1}.pdf'.format(subdir,label))
-    # return g_gdots
-
-def vis_cluster_tracklet_diff(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gdot_init=0.0,subdir=''):
-    """ This function displays and saves a quiver plot with the arrows form our
-    fitted clusters (passed in params_dict), and our original measures passed in
-    agg_dict (only the entries with the realted cluster id's passed in idxs).
-    ============
-    The plot is colored by the category of the arrow (cluster fits are dark,
-    transformed clusters, with the g and gdot from the cluster fit are inbetween,
-    and the original tracklet fits are light blue.)
-    """
-    a,adot,b,bdot,colors = [],[],[],[],[]
-    arrows = []
-    cluster_tracklet_level = []
-
-    for k,v in agg_dict.items():
-        if k in idxs:
-            cluster_tracklet_level.append(v)
-
-    if len(params_dict)!= len(cluster_tracklet_level):
-        raise ValueError('the length of the cluster params {0} is different from the number of ids \
-                            passed for agg_dict {1}'.format(len(params_dict),len(cluster_tracklet_level)))
-    for k,v in params_dict.items():
-        # k represents cluster id and v represents the related a adot,b,bdot,g,g_dot
-        arrows.append(list(v[:4])+[1000])
-
-    for clust_trkls,cparams in zip(cluster_tracklet_level,params_dict.values()):
-        g_cl,gdot_cl = cparams[-2:]
-        for trkl in clust_trkls:
-            obs_in_trkl = [i[1:] for i in trkl]
-            arrows.append(list(fit_tracklet(t_ref, g_cl, gdot_cl, obs_in_trkl)[:4])+[500])
-
-    for clust_trkls in cluster_tracklet_level:
-        for trkl in clust_trkls:
-            obs_in_trkl = [i[1:] for i in trkl]
-            arrows.append(list(fit_tracklet(t_ref, g_init, gdot_init, obs_in_trkl)[:4])+[100])
-
-    a,adot,b,bdot,colors = np.split(np.array(arrows),5,axis=1)
-
-    colormap = cm.cool
-    fig,ax=plt.subplots(figsize=(18, 16))
-
-    Q = ax.quiver(a, b, adot, bdot, colors, cmap=colormap,scale=0.3, width=0.0003)
-
-    plt.colorbar(Q,ax=ax)
-    plt.xlim(-0.1, 0.1)
-    plt.ylim(-0.1, 0.1)
-    plt.xlabel('alpha')
-    plt.ylabel('beta')
-    plt.title('Arrows with orbit fit. Darker colors represent fitted clusters, and lighter clusters represent individual tracklets.')
-    plt.savefig('{}cluster_tracklet_diff.pdf'.format(subdir))
-
-def chisq(opt_result,args,flag='chi'):
-    """ calc the chi sq for the result of the minimization function.
-    returns the agg chi sq and the chi sq array on a observation level
+def error(opt_result,args,flag='chi'):
+    """ Calculate the error for the result of the minimization function.
+    returns the mean chi sq or rmse and the associated chi sq or rmse array
+    on the observation level.  The function is meant to test for the validity of
+    clusters fit with our nonlinear curve fitting algorithm.
+    ---------
+    Args: opt_result, array length 6, the result of the optimization function.
+          args: the list of lists that contains each individual observation in
+                    the cluster and its xe, ye, ze, t_emit, theta_x, and theta_y.
+          flag: str, either 'chi', or 'rms'. Designates which error term is calculated.
+    ---------
+    Returns: tuple of form (float, list) where the float is the rmse or avg chi sq
+                and the list, which has length equal to the number of observations,
+                is the rmse or chi sq on a per-observation level.
     """
     vflag = ('chi','rms')
     if flag not in vflag:
         raise ValueError('flag not in valid flags try rms or chi')
     if flag=='chi':
-        chi,var_chi=0.0,(0.2/205625.)**2 # in radians (from arcseconds)
+        err,var_e=0.0,(0.2/205625.)**2 # in radians (from arcseconds)
     if flag=='rms':
-        chi,var_chi=0.0,(1./205625.)**2
+        err,var_e=0.0,(1./205625.)**2
 
     a,adot,b,bdot,g,gdot = opt_result
-    chi_arr = []
+    err_arr = []
     for arg in args:
         xe, ye, ze, t_emit, theta_x, theta_y = arg
         tx = (a + adot*t_emit - g*xe)/(1 + gdot*t_emit - g*ze)
         ty = (b + bdot*t_emit - g*ye)/(1 + gdot*t_emit - g*ze)
         if flag=='rms':
-            calc_chi = np.sqrt((theta_x-tx)**2/var_chi + (theta_y-ty)**2/var_chi)
+            calc_err = np.sqrt((theta_x-tx)**2/var_e + (theta_y-ty)**2/var_e)
         elif flag=='chi':
-            calc_chi = (theta_x-tx)**2/var_chi + (theta_y-ty)**2/var_chi
-        chi += calc_chi
-        chi_arr.append(calc_chi)
+            calc_err = (theta_x-tx)**2/var_e + (theta_y-ty)**2/var_e
+        err += calc_err
+        err_arr.append(calc_err)
 
-    return chi/len(chi_arr),chi_arr
+    return err/len(err_arr),err_arr
 
-def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, GM=MPC_library.Constants.GMsun):
+def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM=MPC_library.Constants.GMsun):
     """ This function needs to take in all the observations over the cluster of
     tracklets (min of 3 tracklets), and return the a,adot,b,bdot,g and gdot.
 
@@ -344,16 +119,14 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, GM=MPC_library
                 value of the loss function when completely minimized, and the third
                 value is the chisq statistic.
     """
-    # tracklet id, jd, dtl, theta_x, theta_y, theta_z, xe, ye, ze, t_emit
-    # dependent = np.array([np.array((obs[2],obs[3])) for obs in all_obs])
-    # for c,clust in agg_dict.items():
     working_obs = [itm[1:] for ob in list_of_tracklets for itm in ob]
-    # working_obs = [i[1:] for i in a_obs]
-    t_ref_mean = sum(obs[0] for obs in working_obs)/len(working_obs)
-    # print('Avg reference time:',t_ref_mean)
+
+    # Left over from calculating the mean of the times of the obs to get as new ref
+    # t_ref_mean = sum(obs[0] for obs in working_obs)/len(working_obs)
+
     args = [(obs[5],obs[6],obs[7],obs[0]-obs[1]-t_ref,obs[2],obs[3]) for obs in working_obs]
 
-    # get the avg of the trackelt params
+    # Get the avg of the trackelt params
     x0_guess = []
     for trkl in list_of_tracklets:
         obs_in_trkl = [i[1:] for i in trkl]
@@ -361,12 +134,22 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, GM=MPC_library
     x0_guess = np.append(np.array(x0_guess).mean(axis=0), [g_init,gdot_init])
 
     def grad_loss(arr):
-        """ Hoook for vincent to implement the gradient of the loss function below"""
+        """ Hook for vincent to implement the gradient of the loss function below"""
         pass
 
     def loss(arr):
-        """ loss func: aggregate the errors from the loss and minimize this function
-        Kind of nasty because it uses global args values, but it should work."""
+        """ Loss function: aggregate the errors from the loss of the theta_x and theta_y
+        with equal weighting and minimize this function. Regretablly, this function
+        uses the global variable (a list of lists) 'args' to aggregate the errors
+        from each observation in realtion to both theta_x and theta_y.
+        ---------
+        Args: NOTE: uses the global variable 'args'
+              arr; the array of the a, adot, b, bdot, g, gdot values we are
+                    tuning to minimize this loss function.
+        ---------
+        Returns: float, the loss of the function in terms of the sum of
+                    squared error for both theta_x and theta_y.
+        """
         loss= 0.0
         a, adot, b, bdot, g, gdot = arr
 
@@ -378,17 +161,16 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, GM=MPC_library
 
         return loss
 
-    opt_out = minimize(loss,x0=np.array(x0_guess))#,method='L-BFGS-B')
+    opt_out = minimize(loss,x0=np.array(x0_guess))
 
     # calc chi sq
-    csq,csq_arr = chisq(opt_out.x,args,flag='rms')
+    err,err_arr = error(opt_out.x,args,flag=flag)
 
     # print('init',x0_guess)
     # print('diff',[abs(i-j) for i,j in zip(x0_guess,opt_out.x)])
     # print('everything',opt_out)
-    return opt_out.x, opt_out.fun, csq,csq_arr
+    return opt_out.x, opt_out.fun, err, err_arr
 
-# results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
 def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new_rad=0.00248, angDeg=5.5, gi=0.4, gdoti=0.0):
     """ Not a real this yet.. still in progress wrapper for doing the whole nlin fit process"""
     res_dict = get_res_dict(infilename, pixels, nside, n, angDeg=angDeg, g=gi, gdot=gdoti)
@@ -396,10 +178,10 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
     cluster_counter = Counter()
     cluster_id_dict = copy(clust_ids)
 
-    # for each chunk of sky in our window
+    # For each chunk of sky in our window
     for pix, results_d in res_dict.items():
 
-        # get the arrows with the old transforms (this is also kind of redundent, but pmo is roe so leave for now)
+        # Get the arrows with the old transforms (this is also kind of redundent, but pmo is roe so leave for now)
         ot_arrows = list(_return_arrows_resuts(results_d, t_ref, [(gi,gdoti)], \
                                             fit_tracklet_func=fit_tracklet).values())[0]
         i = 0
@@ -413,19 +195,19 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
         ot_points=np.array(combined)
         ot_tree = scipy.spatial.cKDTree(ot_points)
 
-        # create agg_dict for the specific chunk of sky
+        # Create agg_dict for the specific chunk of sky
         agg_dict = defaultdict(list)
         for k,v in clust_ids.items():
             # k is the tracklet id, v is the cluster id
 
-            # the possibility of this exists only because results_d is a default dict (otherwise keyerror)
+            # The possibility of this exists only because results_d is a default dict (otherwise keyerror)
             if results_d[k]!=[]:
                 agg_dict[v].append([tuple([k]+list(i)) for i in results_d[k]])
 
-        # get the nonlinear fit of the clusters in this pixel
-        fit_dict = nlin_fits(agg_dict,gi,gdoti,t_ref)
+        # Get the nonlinear fit of the clusters in this pixel
+        fit_dict = _nlin_fits(agg_dict,gi,gdoti,t_ref)
 
-        # for each cluster check the nearness of the surrounding
+        # For each cluster check the nearness of the surrounding
         # points in the old transform and pick canidates to get transformed
         # with the new g and gdot and then comopare again, with a larger
         # radius than the initial comparison. Then if new cluster id's have been
@@ -440,7 +222,6 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
             canidates = ot_tree.query_ball_point(v[:4],r=rad*50.) # tuneable param
 
             if canidates !=[]:
-                # print(canidates)
                 nt_points = []
                 nt_label_dict = []
                 for idx in canidates:
@@ -456,75 +237,35 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
                     tracklet_id = nt_label_dict[idx].strip()
                     cluster_list.append(tracklet_id)
                     cluster_id_dict.update({tracklet_id: k})
-                # print(set(cluster_list))
+
                 trkl_ids_in_cluster |= set(cluster_list)
                 cluster_key='|'.join(sorted(trkl_ids_in_cluster))
                 cluster_counter.update({cluster_key: 1})
 
-
     return cluster_counter, cluster_id_dict
 
-def nlin_fits(agg_dict, g_init, gdot_init, t_ref):
-    """ helper for nlin fits"""
+def _nlin_fits(agg_dict, g_init, gdot_init, t_ref):
+    """ This is a helper function for the fit_extend function.
+    It calculates the fitted parameters for each cluster it is given in
+    agg_dict, and returns a dictionary with cluster_id as the key and the realted
+    parameters as the value.
+    -------
+    Args: agg_dict; a dictionary with cluster id as key and list of lists of tuples
+            where the outer list represents the cluster, the inner list represents
+            a tracklet and each tuple represents an observation.
+          g_init; float, the gamma value (distance from observer to the asteroid)
+          gdot_init; float, the gamma dot value of radial velocity.
+          t_ref; the lunar center of the month in question.
+    -------
+    Returns: fit_dict where the key is cluster_id and the value is the related,
+                fitted a,adot,b,bdot,g,gdot parameters for that cluster.
+    """
     fit_dict= {}
     # k is the cluster id, v is the tracklets in the cluster id
     for k, v in agg_dict.items():
         params, func_val, chisq, chiarr = full_fit_t_loss(t_ref, g_init, gdot_init, v)
         fit_dict[k] = params
-    return fit_dict#, results
-
-
-# results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
-def full_fit_trkl(t_ref, g_init, gdot_init,  all_obs, GM=MPC_library.Constants.GMsun):
-    """ This is not working... """
-    # theta_x, theta_y, theta_z, xe, ye, ze, t_emit
-    dependent = np.array([np.array((obs[2],obs[3])) for obs in all_obs])
-    independent = np.array([np.array((obs[5],obs[6],obs[7],obs[0]-obs[1]-t_ref)) for obs in all_obs])
-
-    p0_guess = list(fit_tracklet(t_ref, g_init, gdot_init, all_obs)[:4])
-    p0_guess.extend([g_init,gdot_init])
-
-    print('init',p0_guess)
-
-    def f(obs,a,adot,b,bdot,g,gdot):
-        """ """
-        # print('obs',obs.shape)
-        # print(np.split(obs,4,axis=1))
-        # xe,ye,ze,t_emit = np.split(obs,4,axis=1)
-        xe,ye,ze,t_emit = obs
-        x = (a + adot*t_emit - g*xe)/(1 + gdot*t_emit - g*ze)
-        y = (b + bdot*t_emit - g*ye)/(1 + gdot*t_emit - g*ze)
-
-        # print(x,y)
-        # print(dependent.shape)
-        # print(res.shape)
-        # print(res[:,0].reshape(-1,1))
-        # print(res[:,0])
-        return np.array([x,y])
-
-    def loss(obs,a,adot,b,bdot,g,gdot):
-        """ loss func: aggregate the errors from the loss and minimize this function """
-        loss,chi = 0.0,0.0
-        var_chi = 0.2/205625. # in radians (conversion from arcseconds)
-        # a, adot, b, bdot, g, gdot = arr
-
-
-        xe, ye, ze, t_emit, theta_x, theta_y = np.split(obs,6,axis=1)
-        tx = (a + adot*t_emit - g*xe)/(1 + gdot*t_emit - g*ze)
-        ty = (b + bdot*t_emit - g*ye)/(1 + gdot*t_emit - g*ze)
-        loss = (theta_x-tx)**2 + (theta_y-ty)**2
-        # chi += numerator_chi/var_chi
-        # loss += numerator_chi
-
-        return loss
-
-    print(independent.shape,dependent.shape)
-    params, pcov = curve_fit(f, xdata=independent, ydata=dependent, p0=p0_guess)
-    print('init',p0_guess)
-    print('params',params)
-    print('cov',pcov)
-    print('reduced chi sq?',sum((f(independent,*params)-dependent)**2)/(len(all_obs)-6.0))
-    return params
+    return fit_dict
 
 def get_res_dict(infilename, pixels, nside, n, angDeg=5.5, g=0.4, gdot=0.0):
     """ Function to get the results dict object from a given file name. The
@@ -558,70 +299,6 @@ def get_res_dict(infilename, pixels, nside, n, angDeg=5.5, g=0.4, gdot=0.0):
             master_dict[i] = res_dict
 
     return master_dict
-
-def chi_sq_compare(t_ref, g, gdot, tracklets,  fit_tracklet_func=fit_tracklet, GM=MPC_library.Constants.GMsun):
-    """ FUNCTION NOT DONE OR USED::::: Here we want to take in the previous a,
-     adot, b, bdot and compare those
-    values via chi sq with the orbit calculated by using all the obs in the
-    clustered tracklets.  The input will be the reference time, g, gdot and a
-    list of lists where the inner list is the observations in a tracklet
-    and the meta list is the list of tracklets in our cluster.
-    """
-    # Get the fitted a,adot,b,bdot values on a per-tracklet level
-    individual_fits = []
-    for tracklet in tracklets:
-        individual_fits.append(np.array(list(fit_tracklet_func(t_ref, g, gdot, tracklet))[:4]+[g,gdot]))
-
-    # Get the fitted values over all observations in the cluster
-    all_obs = [obs for track in tracklets for obs in track]
-    meta_fit = np.array(full_fit_trkl(t_ref, g, gdot, all_obs))
-
-    validated_cluster = []
-    for tracklet, ifit in zip(tracklets, individual_fits):
-        # We can do this because we expect the a,adot,b,bdot to have the same scale, right?
-        chi2stat, pval = chisquare(ifit,meta_fit)
-        if pval>0.05:
-            validated_cluster.append(tracklet)
-
-    # Now return a list of lists of tracklets we validated are correctly clustered.
-    # the second return value is a bool stating if all the tracklets we initially had were in the valid cluster
-    return validated_cluster, len(validated_cluster)==len(tracklets)
-
-
-# results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
-def fit_tracklet_tst(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
-    """ coupled least squares fit for the parameters holding gamma constant.
-
-    NOTE: gamma dot input is not needed and is left for method consistency
-
-    This is not used anywhere yet, and the purpose is to solve for, linearly,
-    what the nlin fit solves for nonlinearly.
-    --------
-    Args:
-          t_ref; float, the lunar center jd
-          g; float; the gamma value (distance from observer to the asteroid)
-          gdot; float; the gamma dot value of radial velocity.
-    --------
-    Returns: solution vector with calculated a,adot,b,bdot,gdot, and given g and time
-    """
-    # get some vals
-    t_emit = [(obs[0]-obs[1]-t_ref) for obs in v]
-    acc_z = -GM*g*g
-
-    # make the matrices from the given vector inputs
-    mx = np.array([np.array((1.0, t_emit, 0.0, 0.0, g*t_emit*obs[5])) for obs in v])
-    my = np.array([np.array((0.0, 0.0, 1.0, t_emit, g*t_emit*obs[6])) for obs in v])
-    theta_x = np.array([obs[2] for obs in v])
-    theta_y = np.array([obs[3] for obs in v])
-
-    # aggregate the matrices for the coupoled lstsq fit
-    combined_m = np.dot(mx.T,mx)+np.dot(my.T,my)
-    combined_res = np.dot(mx,theta_x) + np.dot(my,theta_y)
-
-    # solution in form: a adot, b, bdot, g_dot
-    sol = np.linalg.solve(combined_m, combined_res)
-
-    return (sol, t_emit[0])
 
 def fit_tracklet_grav(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun, eps2=1e-16):
     """ NOT USED YET. JUST HERE FOR POTENTIAL FUTURE USE.
@@ -760,7 +437,6 @@ def get_tracklet_obs(vec,lines):
             dlt = ze/MPC_library.Constants.speed_of_light
 
             # Append the resulting data to a dictionary keye do trackletID.
-            # 12/11 added strip here, could propagate errors forward
             results_dict[trackletID.strip()].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
 
     return results_dict
@@ -844,14 +520,8 @@ def _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, ve
                 for outstring in results:
                     outfile.write(outstring)
 
-def write_transform_to_arrows(t_ref, g_gdot_pairs, vec, lines, outfilename, cluster_id_dict={}, fit_tracklet_func=fit_tracklet):
-    """ wrapper function for _write_arrows_files"""
-    results_dict = get_tracklet_obs(vec,lines)
-    _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, vec, outfilename,cluster_id_dict)
-
-
-def transform_to_arrows(t_ref, g_gdot_pairs, vec, lines, outfilename='', fit_tracklet_func=fit_tracklet):
-    # TODO put this method together with the one above it and edit where needed.
+def transform_to_arrows(t_ref, g_gdot_pairs, vec, lines, outfilename='',makefiles=False, \
+                            cluster_id_dict={},fit_tracklet_func=fit_tracklet):
     """ We are going to re-transform those assuming a fixed z (or gamma) value
     with respect to the sun and the reference direction, rather than a
     fixed r, at the reference time. Rotate observatory positions to projection coordinates,
@@ -878,8 +548,10 @@ def transform_to_arrows(t_ref, g_gdot_pairs, vec, lines, outfilename='', fit_tra
                 to the ggdot pair that is the key of this dict.
     """
     results_dict = get_tracklet_obs(vec,lines)
-
-    return _return_arrows_resuts(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func)
+    if makefiles:
+        _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, vec, outfilename,cluster_id_dict)
+    else:
+        return _return_arrows_resuts(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func)
 
 
 def cluster_sky_regions(g_gdot_pairs, pixels, t_ref, infilename, nside=8, angDeg=7.5, cluster_func=transform_to_arrows):
@@ -902,7 +574,6 @@ def cluster_sky_regions(g_gdot_pairs, pixels, t_ref, infilename, nside=8, angDeg
     Returns: a dictionary with pixels as keys and dicts as values where the inner
                 dicts have g_gdotpairs as keys and realted points as values.
     """
-    # This bit from here
     hp_dict = util.get_hpdict(infilename)
 
     pixel_results = {}
@@ -1103,7 +774,6 @@ def accessible_clusters(pixels, infilename, mincount=3):
     mergedTime_dict = {}
     for pix in pixels:
         lines = output_sky_regions([pix], infilename=infilename)
-        #print(pix, len(lines))
         trackletCounter = Counter()
         tracklet_time = defaultdict(float)
         for line in lines:
@@ -1182,7 +852,7 @@ def generate_sky_region_files(infilename, pixels, nside, n, angDeg=5.5, g=0.4, g
         else:
             outfilename = infilename.rstrip('.trans') + '_hp_' + ('%03d' % (i)) + '_g'+ ('%.2lf' % (g))+'_gdot' + ('%+5.1le' % (gdot))+'_cid'
         if len(lines) > 0:
-            write_transform_to_arrows(util.lunation_center(n), [(g, gdot)], vec, lines, outfilename, cluster_id_dict=cluster_id_dict)
+            transform_to_arrows(util.lunation_center(n), [(g, gdot)], vec, lines, outfilename, makefiles=True, cluster_id_dict=cluster_id_dict)
 
 
 
@@ -1236,3 +906,207 @@ def generate_sky_region_files(infilename, pixels, nside, n, angDeg=5.5, g=0.4, g
 #                 rates_dict[dt_val, rad_val] = cluster_counter.keys(), errs
 #
 #         return _rates_to_results(rates_dict, dt)
+
+# results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
+# def full_fit_trkl(t_ref, g_init, gdot_init,  all_obs, GM=MPC_library.Constants.GMsun):
+#     """ This is not working... """
+#     # theta_x, theta_y, theta_z, xe, ye, ze, t_emit
+#     dependent = np.array([np.array((obs[2],obs[3])) for obs in all_obs])
+#     independent = np.array([np.array((obs[5],obs[6],obs[7],obs[0]-obs[1]-t_ref)) for obs in all_obs])
+#
+#     p0_guess = list(fit_tracklet(t_ref, g_init, gdot_init, all_obs)[:4])
+#     p0_guess.extend([g_init,gdot_init])
+#
+#     print('init',p0_guess)
+#
+#     def f(obs,a,adot,b,bdot,g,gdot):
+#         """ """
+#         # print('obs',obs.shape)
+#         # print(np.split(obs,4,axis=1))
+#         # xe,ye,ze,t_emit = np.split(obs,4,axis=1)
+#         xe,ye,ze,t_emit = obs
+#         x = (a + adot*t_emit - g*xe)/(1 + gdot*t_emit - g*ze)
+#         y = (b + bdot*t_emit - g*ye)/(1 + gdot*t_emit - g*ze)
+#
+#         # print(x,y)
+#         # print(dependent.shape)
+#         # print(res.shape)
+#         # print(res[:,0].reshape(-1,1))
+#         # print(res[:,0])
+#         return np.array([x,y])
+#
+#     def loss(obs,a,adot,b,bdot,g,gdot):
+#         """ loss func: aggregate the errors from the loss and minimize this function """
+#         loss,chi = 0.0,0.0
+#         var_chi = 0.2/205625. # in radians (conversion from arcseconds)
+#         # a, adot, b, bdot, g, gdot = arr
+#
+#
+#         xe, ye, ze, t_emit, theta_x, theta_y = np.split(obs,6,axis=1)
+#         tx = (a + adot*t_emit - g*xe)/(1 + gdot*t_emit - g*ze)
+#         ty = (b + bdot*t_emit - g*ye)/(1 + gdot*t_emit - g*ze)
+#         loss = (theta_x-tx)**2 + (theta_y-ty)**2
+#         # chi += numerator_chi/var_chi
+#         # loss += numerator_chi
+#
+#         return loss
+#
+#     print(independent.shape,dependent.shape)
+#     params, pcov = curve_fit(f, xdata=independent, ydata=dependent, p0=p0_guess)
+#     print('init',p0_guess)
+#     print('params',params)
+#     print('cov',pcov)
+#     print('reduced chi sq?',sum((f(independent,*params)-dependent)**2)/(len(all_obs)-6.0))
+#     return params
+
+# def write_transform_to_arrows(t_ref, g_gdot_pairs, vec, lines, outfilename, cluster_id_dict={}, fit_tracklet_func=fit_tracklet):
+#     """ wrapper function for _write_arrows_files"""
+#     results_dict = get_tracklet_obs(vec,lines)
+#     _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, vec, outfilename,cluster_id_dict)
+#
+# results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
+# def kbo2d_linear(pin, obs, t_ref):
+#     """Linearized version of the 2d projection of orbital position.  Only
+#        leading-order terms for each parameter's derivative are given.
+#        The derivative with respect to gdot is inserted here - note that
+#        it is much smaller than the others, and is the only part of the
+#        derivatives that has any dependence upon the incoming PBASIS.
+#     """
+#     jd_tdb, dlt, theta_x,theta_y,theta_z,xe,ye,ze = obs
+#     a,adot,b,bdot,g,gdot = pin
+#     t_emit = obs[0]-obs[1]-t_ref
+#     #Account for light-travel time differentially to leading order
+#     #by retarding KBO motion by z component of Earth's position.
+#     #Note: ignoring acceleration here.
+#     # t_emit = obs->obstime - ze/SPEED_OF_LIGHT;
+#
+#     x = a + adot*t_emit - g * xe
+#     - gdot * (adot*t_emit*t_emit - g*xe*t_emit)
+#     y = b + bdot*t_emit - g * ye
+#     - gdot * (bdot*t_emit*t_emit - g*ye*t_emit)
+#
+#     dx=np.zeros(6)
+#     dy=np.zeros(6)
+#
+#     dx[1] = dy[3] = 1.
+#     dx[2] = dy[4] = t_emit
+#     dx[5] = -xe
+#     dy[5] = -ye
+#     dx[6] = -(adot*t_emit*t_emit - g*xe*t_emit)
+#     dy[6] = -(bdot*t_emit*t_emit - g*ye*t_emit)
+#
+#     return x,y,dx,dy
+#
+#
+# def prelim_fit(obsarray,pout):
+#     """Take a set of observations and make a preliminary fit using the
+#      linear model of the orbit.  Then fill in zero for gdot, and return
+#      the fit and an uncertainty matrix.  The gdot term of uncertainty
+#      matrix is set to a nominal value.
+#      Note covar is assumed to be 6x6 1-indexed matrix a la Numerical Recipes.
+#     """
+#     beta=np.zeros(6)
+#     alpha=np.zeros((6,6))
+#
+#     # Collect the requisite sums
+#     for ob in obsarray:
+#         # not sure why the original had this? if(obsarray[i].reject==0)
+#
+#         wtx = 1./ob.dthetax
+#         wtx *= wtx
+#         wty = 1./ob.dthetay
+#         wty *= wty
+#
+#         x,y,dx,dy = kbo2d_linear(pout,ob,t_ref);
+#         """Note that the dx[6] and dy[6] terms will only make
+#         even the least sense if the g and adot were set to
+#         some sensible value beforehand.
+#         """
+#
+#         for j in range(6):
+#           beta[j] += ob.thetax * dx[j] * wtx;
+#           beta[j] += ob.thetay * dy[j] * wty;
+#           for k in range(j+1):
+#               alpha[j][k] += dx[j]*dx[k]*wtx;
+#               alpha[j][k] += dy[j]*dy[k]*wty;
+#
+#     """ Symmetrize and invert the alpha matrix to give covar.  Note
+#     that I'm only going to bother with the first 5 params.
+#     """
+#     for i in range(5):
+#       for j in range(i):
+#           alpha[j][i]=alpha[i][j];
+#
+#     covar = np.linalg.inv(alpha)
+#     soln = np.dot(covar, beta)
+#
+#     pres = np.append(soln,0.0)
+#
+#     # Set the gdot parts of the covariance matrix to nominal values
+#     for i in range(6):
+#         covar[i][5]=covar[5][i]=0.;
+#     covar[5][5]=0.1*TPI*TPI*g**3
+#
+#     return pres, covar
+
+# results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
+# def fit_tracklet_tst(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
+#     """ coupled least squares fit for the parameters holding gamma constant.
+#
+#     NOTE: gamma dot input is not needed and is left for method consistency
+#
+#     This is not used anywhere yet, and the purpose is to solve for, linearly,
+#     what the nlin fit solves for nonlinearly.
+#     --------
+#     Args:
+#           t_ref; float, the lunar center jd
+#           g; float; the gamma value (distance from observer to the asteroid)
+#           gdot; float; the gamma dot value of radial velocity.
+#     --------
+#     Returns: solution vector with calculated a,adot,b,bdot,gdot, and given g and time
+#     """
+#     # get some vals
+#     t_emit = [(obs[0]-obs[1]-t_ref) for obs in v]
+#     acc_z = -GM*g*g
+#
+#     # make the matrices from the given vector inputs
+#     mx = np.array([np.array((1.0, t_emit, 0.0, 0.0, g*t_emit*obs[5])) for obs in v])
+#     my = np.array([np.array((0.0, 0.0, 1.0, t_emit, g*t_emit*obs[6])) for obs in v])
+#     theta_x = np.array([obs[2] for obs in v])
+#     theta_y = np.array([obs[3] for obs in v])
+#
+#     # aggregate the matrices for the coupoled lstsq fit
+#     combined_m = np.dot(mx.T,mx)+np.dot(my.T,my)
+#     combined_res = np.dot(mx,theta_x) + np.dot(my,theta_y)
+#
+#     # solution in form: a adot, b, bdot, g_dot
+#     sol = np.linalg.solve(combined_m, combined_res)
+#
+#     return (sol, t_emit[0])
+# def chi_sq_compare(t_ref, g, gdot, tracklets,  fit_tracklet_func=fit_tracklet, GM=MPC_library.Constants.GMsun):
+#     """ FUNCTION NOT DONE OR USED::::: Here we want to take in the previous a,
+#      adot, b, bdot and compare those
+#     values via chi sq with the orbit calculated by using all the obs in the
+#     clustered tracklets.  The input will be the reference time, g, gdot and a
+#     list of lists where the inner list is the observations in a tracklet
+#     and the meta list is the list of tracklets in our cluster.
+#     """
+#     # Get the fitted a,adot,b,bdot values on a per-tracklet level
+#     individual_fits = []
+#     for tracklet in tracklets:
+#         individual_fits.append(np.array(list(fit_tracklet_func(t_ref, g, gdot, tracklet))[:4]+[g,gdot]))
+#
+#     # Get the fitted values over all observations in the cluster
+#     all_obs = [obs for track in tracklets for obs in track]
+#     meta_fit = np.array(full_fit_trkl(t_ref, g, gdot, all_obs))
+#
+#     validated_cluster = []
+#     for tracklet, ifit in zip(tracklets, individual_fits):
+#         # We can do this because we expect the a,adot,b,bdot to have the same scale, right?
+#         chi2stat, pval = chisquare(ifit,meta_fit)
+#         if pval>0.05:
+#             validated_cluster.append(tracklet)
+#
+#     # Now return a list of lists of tracklets we validated are correctly clustered.
+#     # the second return value is a bool stating if all the tracklets we initially had were in the valid cluster
+#     return validated_cluster, len(validated_cluster)==len(tracklets)

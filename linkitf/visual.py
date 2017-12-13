@@ -202,3 +202,158 @@ def make_figure(filename,cluster=False,subs=True,outpath=''):
     plt.savefig(outfile)
     plt.close()
     plt.ion()
+
+def vis_cluster_arrows_err(params_dict,c_res,log=False,subdir=''):
+    """ This function plots arrows (just cluster fits).  The color is
+    given by the error value (currently one of chi squared, or rms) for each
+    cluster fit.  The plot is the typical quiver plot we show.  The lighter yellow
+    (on viridis) represent the larger errors and the darker purple represent the
+    low errors.
+    ----------
+    Args: params_dict; 
+    """
+    arrows = []
+    for v,ch in zip(params_dict.values(),c_res):
+        # v represents the related a adot,b,bdot,g,g_dot
+        if log:
+            arrows.append(list(v[:4])+[np.log(ch)])
+        else:
+            arrows.append(list(v[:4])+[ch])
+    a,adot,b,bdot,colors = np.split(np.array(arrows),5,axis=1)
+
+    colormap = cm.viridis
+    fig,ax=plt.subplots(figsize=(18, 16))
+
+    Q = ax.quiver(a, b, adot, bdot, colors, cmap=colormap,scale=0.3, width=0.0003)
+    plt.colorbar(Q,ax=ax)
+
+    plt.xlim(-0.2, 0.2)
+    plt.ylim(-0.2, 0.2)
+    plt.xlabel('alpha')
+    plt.ylabel('beta')
+    if log:
+        plt.title('Arrows (just cluster centers) colored by the log error value')
+    else:
+        plt.title('Arrows (just cluster centers) colored by the error value')
+    plt.savefig('{}cluster_arrows_color.pdf'.format(subdir))
+
+def vis_cluster_tracklet_arrows(params_dict, agg_dict, idxs, t_ref, c_res, g_init=0.4, \
+                                    gdot_init=0.0,label='None',size=6,log=False,subdir=''):
+    """ This function plots arrows (both the cluster fits and the original tracklets).  The color is
+    given by the log transform of the chi_sq value for each cluster fit (the tracklets are all grey).
+    the label tag tells the function which labels to display. options are ['None','ggdot','id','error']
+    """
+    valid_labels = ['None','ggdot','id','error']
+    if label not in valid_labels:
+        raise ValueError('put in a valid lablel. one of {}'.format(valid_labels))
+
+    a,adot,b,bdot,colors = [],[],[],[],[]
+    arrows,g_gdots = [],[]
+    cluster_tracklet_level = []
+
+    for k,v in agg_dict.items():
+        if k in idxs:
+            cluster_tracklet_level.append(v)
+
+    if len(params_dict)!= len(cluster_tracklet_level):
+        raise ValueError('the length of the cluster params {0} is different from the number of ids \
+                            passed for agg_dict {1}'.format(len(params_dict),len(cluster_tracklet_level)))
+
+    for k,v,ch in zip(params_dict.keys(),params_dict.values(),c_res):
+        # k represents cluster id and v represents the related a adot,b,bdot,g,g_dot
+        if log:
+            arrows.append(list(v[:4])+[np.log(ch)])
+        else:
+            arrows.append(list(v[:4])+[ch])
+        g_gdots.append((k,v[4:]))
+
+    cl_trk_arrows = []
+    for clust_trkls in cluster_tracklet_level:
+        for trkl in clust_trkls:
+            obs_in_trkl = [i[1:] for i in trkl]
+            cl_trk_arrows.append(list(fit_tracklet(t_ref, g_init, gdot_init, obs_in_trkl)[:4])+[1])
+
+    ac,adotc,bc,bdotc,colorsc = np.split(np.array(cl_trk_arrows),5,axis=1)
+    a,adot,b,bdot,colors = np.split(np.array(arrows),5,axis=1)
+
+    colormap = cm.viridis
+    fig,ax=plt.subplots(figsize=(18, 16))
+
+    Q = ax.quiver(a, b, adot, bdot, colors, cmap=colormap,scale=0.3, width=0.0003)
+    ax.quiver(ac,bc,adotc,bdotc, scale=0.3, width=0.0003, alpha=0.3)
+
+    if label!='None':
+        for pa,pb,pad,pbd,ggd,ch in zip(a, b, adot, bdot, g_gdots, c_res):
+            if label=='ggdot':
+                lab = 'g: {0:.6f}, gdot: {1:.6f}'.format(ggd[1][0],ggd[1][1])
+            if label=='id':
+                lab = 'id:%s'%ggd[0]
+            if label=='error':
+                lab = 'error: {}'.format(ch)
+            if -0.2<pa[0]<0.2 and -0.2<pb[0]<0.2:
+                plt.quiverkey(Q, X=pa[0], Y=pb[0], U=pad[0],label=lab, coordinates='data',fontproperties={'size': size})
+
+    plt.colorbar(Q,ax=ax)
+    plt.xlim(-0.2, 0.2)
+    plt.ylim(-0.2, 0.2)
+    plt.xlabel('alpha')
+    plt.ylabel('beta')
+    if log:
+        plt.title('Arrows colored by the log transform of the error values. Tracklets are overlayed in light grey')
+    else:
+        plt.title('Arrows colored by the error values. Tracklets are overlayed in light grey')
+    if log:
+        plt.savefig('{0}cluster_tracklet_arrows_label_{1}_log.pdf'.format(subdir,label))
+    else:
+        plt.savefig('{0}cluster_tracklet_arrows_label_{1}.pdf'.format(subdir,label))
+    # return g_gdots
+
+def vis_cluster_tracklet_diff(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gdot_init=0.0,subdir=''):
+    """ This function displays and saves a quiver plot with the arrows form our
+    fitted clusters (passed in params_dict), and our original measures passed in
+    agg_dict (only the entries with the realted cluster id's passed in idxs).
+    ============
+    The plot is colored by the category of the arrow (cluster fits are dark,
+    transformed clusters, with the g and gdot from the cluster fit are inbetween,
+    and the original tracklet fits are light blue.)
+    """
+    a,adot,b,bdot,colors = [],[],[],[],[]
+    arrows = []
+    cluster_tracklet_level = []
+
+    for k,v in agg_dict.items():
+        if k in idxs:
+            cluster_tracklet_level.append(v)
+
+    if len(params_dict)!= len(cluster_tracklet_level):
+        raise ValueError('the length of the cluster params {0} is different from the number of ids \
+                            passed for agg_dict {1}'.format(len(params_dict),len(cluster_tracklet_level)))
+    for k,v in params_dict.items():
+        # k represents cluster id and v represents the related a adot,b,bdot,g,g_dot
+        arrows.append(list(v[:4])+[1000])
+
+    for clust_trkls,cparams in zip(cluster_tracklet_level,params_dict.values()):
+        g_cl,gdot_cl = cparams[-2:]
+        for trkl in clust_trkls:
+            obs_in_trkl = [i[1:] for i in trkl]
+            arrows.append(list(fit_tracklet(t_ref, g_cl, gdot_cl, obs_in_trkl)[:4])+[500])
+
+    for clust_trkls in cluster_tracklet_level:
+        for trkl in clust_trkls:
+            obs_in_trkl = [i[1:] for i in trkl]
+            arrows.append(list(fit_tracklet(t_ref, g_init, gdot_init, obs_in_trkl)[:4])+[100])
+
+    a,adot,b,bdot,colors = np.split(np.array(arrows),5,axis=1)
+
+    colormap = cm.cool
+    fig,ax=plt.subplots(figsize=(18, 16))
+
+    Q = ax.quiver(a, b, adot, bdot, colors, cmap=colormap,scale=0.3, width=0.0003)
+
+    plt.colorbar(Q,ax=ax)
+    plt.xlim(-0.1, 0.1)
+    plt.ylim(-0.1, 0.1)
+    plt.xlabel('alpha')
+    plt.ylabel('beta')
+    plt.title('Arrows with orbit fit. Darker colors represent fitted clusters, and lighter clusters represent individual tracklets.')
+    plt.savefig('{}cluster_tracklet_diff.pdf'.format(subdir))
