@@ -172,7 +172,35 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
     return opt_out.x, opt_out.fun, err, err_arr
 
 def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new_rad=0.00248, angDeg=5.5, gi=0.4, gdoti=0.0):
-    """ Not a real this yet.. still in progress wrapper for doing the whole nlin fit process"""
+    """  This function takes a whole window of time (with dt=15 about a month)
+    and calculates the fitted orbits for each cluster already clustered in the
+    passed file.  Then we compare the old transform values (the ones we clustered on
+    in the first run) and pick a arbitrarily large radius (the only limitation on radius
+    size here is computational efficiency because we are making a new KDTree with the
+    results).
+
+        So, for each cluster check the nearness of the surrounding points in
+    the old transform and pick canidates (with an arb large radius) to get transformed
+    with the new g and gdot (that come from our cluster orbit fits), and then compare
+    again, with new radius (defaults to 2x the initial best radius). Then if new
+    cluster id's have been added to the cluster via this method, add them to
+    cluster_counter and change the realted tracklet id in cluster_id_dict (newer
+    clusters superseed older in the case of overlap (per our standard protocol).
+    ------------
+    Args: infilename; the location and filename of the .trans file the user wants to use
+          clust_ids; the result of the previous run of find_clusters()
+          pixels; list or range, the range of all healpix sections the user wants.
+          nside; int, number of sides in the healpix division of the sky
+          n; int, the lunar center. use the function in utils to get the jd
+          dt; the best dt value, currently dt=15 based on first principles
+          rad; the best rad value, based on dt=15 we calculated rad to be 0.00124
+                so that is the default value.
+          new_rad; the radius we use to cluster once we transform the approximately
+                    close points with the fitted g and gdot.  Defaults to 2(rad)=0.0248. 
+          angDeg; float, the angle in degrees
+          gi; float; the initial, asserted gamma value (distance from observer to the asteroid)
+          gdoti; float; the initial, asserted gamma dot value of radial velocity.
+    """
     res_dict = get_res_dict(infilename, pixels, nside, n, angDeg=angDeg, g=gi, gdot=gdoti)
     t_ref = util.lunation_center(n)
     cluster_counter = Counter()
@@ -195,25 +223,10 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
         ot_points=np.array(combined)
         ot_tree = scipy.spatial.cKDTree(ot_points)
 
-        # Create agg_dict for the specific chunk of sky
-        agg_dict = defaultdict(list)
-        for k,v in clust_ids.items():
-            # k is the tracklet id, v is the cluster id
-
-            # The possibility of this exists only because results_d is a default dict (otherwise keyerror)
-            if results_d[k]!=[]:
-                agg_dict[v].append([tuple([k]+list(i)) for i in results_d[k]])
-
         # Get the nonlinear fit of the clusters in this pixel
-        fit_dict = _nlin_fits(agg_dict,gi,gdoti,t_ref)
+        fit_dict = _nlin_fits(clust_ids,results_d,gi,gdoti,t_ref)
 
-        # For each cluster check the nearness of the surrounding
-        # points in the old transform and pick canidates to get transformed
-        # with the new g and gdot and then comopare again, with a larger
-        # radius than the initial comparison. Then if new cluster id's have been
-        # added to the cluster via this method, add them to cluster counter
-        # and change the realted tracklet id in cluster_id_dict (newer clusters
-        # superseed older in the case of overlap.
+        # NOTE: Read the docs for explaination of this procedure
         for k,v in fit_dict.items():
             # k is the cluster id and v is the fitted 6 params
             a,adot,b,bdot,g,gdot = v
@@ -244,15 +257,18 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
 
     return cluster_counter, cluster_id_dict
 
-def _nlin_fits(agg_dict, g_init, gdot_init, t_ref):
+def _nlin_fits(clust_ids, results_d, g_init, gdot_init, t_ref):
     """ This is a helper function for the fit_extend function.
     It calculates the fitted parameters for each cluster it is given in
     agg_dict, and returns a dictionary with cluster_id as the key and the realted
     parameters as the value.
-    -------
-    Args: agg_dict; a dictionary with cluster id as key and list of lists of tuples
+    NOTE: agg_dict is a dictionary with cluster id as key and list of lists of tuples
             where the outer list represents the cluster, the inner list represents
-            a tracklet and each tuple represents an observation.
+            a tracklet and each tuple represents an observation as values.
+    -------
+    Args: clust_ids; a dictionary with tracklet id as key and cluster id as values
+          results_d; a dict where the key is the tracklet id and the value is
+                      (jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze).
           g_init; float, the gamma value (distance from observer to the asteroid)
           gdot_init; float, the gamma dot value of radial velocity.
           t_ref; the lunar center of the month in question.
@@ -260,11 +276,21 @@ def _nlin_fits(agg_dict, g_init, gdot_init, t_ref):
     Returns: fit_dict where the key is cluster_id and the value is the related,
                 fitted a,adot,b,bdot,g,gdot parameters for that cluster.
     """
+    # Create agg_dict for the specific chunk of sky
+    agg_dict = defaultdict(list)
+    for k,v in clust_ids.items():
+        # k is the tracklet id, v is the cluster id
+
+        # The possibility of this exists only because results_d is a default dict (otherwise keyerror)
+        if results_d[k]!=[]:
+            agg_dict[v].append([tuple([k]+list(i)) for i in results_d[k]])
+
     fit_dict= {}
     # k is the cluster id, v is the tracklets in the cluster id
     for k, v in agg_dict.items():
         params, func_val, chisq, chiarr = full_fit_t_loss(t_ref, g_init, gdot_init, v)
         fit_dict[k] = params
+
     return fit_dict
 
 def get_res_dict(infilename, pixels, nside, n, angDeg=5.5, g=0.4, gdot=0.0):
@@ -673,6 +699,7 @@ def _rates_to_results(rates_dict, dts):
 
     return results_dict
 
+# Default for training clusters
 gs =[0.4]
 gdots = [-0.004, -0.003, -0.002, -0.001, 0.0, 0.001, 0.002, 0.003, 0.004]
 g_gdots = [(x,y) for x in gs for y in gdots]
@@ -681,7 +708,31 @@ def train_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
                     dts=np.arange(5, 30, 5), radii=np.arange(0.0001, 0.0100, 0.0001),
                     cluster_sky_function=cluster_sky_regions, mincount=3):
     """ This function performs a training run over a set of training data provided
-    by Matt Payne of the MPC in December 2017. Finish docs later as this is NA to orb fit"""
+    by Matt Payne of the MPC in December 2017. This function allows the user to
+    pick a range of dt and rad (specified by dts and radii) and calculate error rates
+    over that grid and discover what the best dt and rad values are likely to be
+    for the rest of the data.
+    --------
+    Args: pixels; range or list, the healpix breakup of the sky;
+          infilename; str, the location and name of the .trans file the user
+                wants to test.
+          t_ref; the lunation center
+          g_gdots; the gamma and gamma dot values the user specifies for the cluster
+                    finding.
+          dts; array, the dts measure the user wants to test.  First principles
+                suggests 15, but it is functionally the weight of the importance
+                of position and velocity, so it can be whatever you want.
+          radii; array, the cluster radii values we look within for the KDTree search.
+          cluster_sky_function; function used to cluster.
+          mincount; int, the fewest number of allowable tracklets in a cluster.
+    --------
+    Returns: dictionary of the form, key is the dt value (one for each value in dts),
+                and the value is a tuple of the form (ds, nclusters, nerrors, keys)
+                where ds is the radius, nclusters is the number of successfully
+                clustered clusters, nerrors is the number of incorrectly
+                clustered clusters, and keys is the string of all tracklet_id's
+                in a cluster joined with the '|' symbol.
+    """
     master = cluster_sky_function(g_gdots, pixels, t_ref, infilename)
     # The training case
     rates_dict={}
@@ -706,8 +757,27 @@ def test_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
                     dt=15, rad=0.00124,
                     cluster_sky_function=cluster_sky_regions, mincount=3):
     """ Also based on the training set.  This function allows the user to test
-    out how well their chosen dt ad rad hyper paremeters perform on training data.
-    Again, NA to orb fit. """
+    out how well their chosen dt ad rad hyperparemeters perform on training data.
+    --------
+    Args: pixels; range or list, the healpix breakup of the sky;
+          infilename; str, the location and name of the .trans file the user
+                wants to test.
+          t_ref; the lunation center
+          g_gdots; the gamma and gamma dot values the user specifies for the cluster
+                    finding.
+          dt; float, the dt measure we set.  First principles suggests 15, but it is
+                functionally the weight of the importance of position and velocity,
+                so it can be whatever you want.
+          rad; float, the cluster radius we look within for the KDTree.
+          cluster_sky_function; function used to cluster.
+          mincount; int, the fewest number of allowable tracklets in a cluster.
+    --------
+    Returns: tuple of form (int, int, list, list) where the first two ints are
+                the number of correct clusters and incorrect clusters (errors)
+                respectively, and the lists are the tracklet id's joined with '|'
+                of the successes and the tracklet id's joined with '|'
+                of the failures, respectively.
+    """
     master = cluster_sky_function(g_gdots, pixels, t_ref, infilename)
 
     cluster_counter, cluster_id_dict = _get_cluster_counter(master, dt, rad, mincount)
@@ -736,7 +806,7 @@ def find_clusters(pixels, infilename, t_ref, g_gdots=g_gdots,
                 so it can be whatever you want.
           rad; float, the cluster radius we look within for the KDTree.
           cluster_sky_function; function used to cluster.
-          mincount; int, the fewest number of allowable trackelts is a cluster.
+          mincount; int, the fewest number of allowable tracklets in a cluster.
     ----------
     Returns: the cluster_counter and cluster_id_dict objects (mentioned above)
     """
