@@ -241,6 +241,7 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
     def_return = [opt_out.x, opt_out.fun, err, err_arr]
     if details:
         def_return.extend(additional_returns)
+
     return tuple(def_return)
 
 def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new_rad=0.00248, angDeg=5.5, gi=0.4, gdoti=0.0):
@@ -272,6 +273,11 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
           angDeg; float, the angle in degrees
           gi; float; the initial, asserted gamma value (distance from observer to the asteroid)
           gdoti; float; the initial, asserted gamma dot value of radial velocity.
+    -------------
+    Returns: cluster_counter; Counter() object with concatenated tracklet_id's with '|'
+                as the key and the associated count,
+             cluster_id_dict, dictionary object with the tracklet id's as keys and the
+                cluster_id's as values.
     """
     res_dict = get_res_dict(infilename, pixels, nside, n, angDeg=angDeg, g=gi, gdot=gdoti)
     t_ref = util.lunation_center(n)
@@ -298,7 +304,7 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
         # Get the nonlinear fit of the clusters in this pixel
         fit_dict = _nlin_fits(clust_ids,results_d,gi,gdoti,t_ref)
 
-        # NOTE: Read the docs for explaination of this procedure
+        # Note: Read the docs for explaination of this procedure
         for k,v in fit_dict.items():
             # k is the cluster id and v is the fitted 6 params
             a,adot,b,bdot,g,gdot = v
