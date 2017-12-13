@@ -1,0 +1,3 @@
+when looking from month to month, we know the gamma dots should be the same for related asteroids.  So, we can scale with the process.
+
+we should transform to "orbital elements" (per Matt) and then we can easily compare by scaling the time step on the position part of the "orbital elements" and that comparison should be rock solid.  This approach should also give us the ability to validate we are fitting reasonable orbits.

@@ -241,10 +241,45 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
     def_return = [opt_out.x, opt_out.fun, err, err_arr]
     if details:
         def_return.extend(additional_returns)
-
+    # print('init guess',x0_guess)
+    # print('result',opt_out.x)
+    # print('diff',[abs(x-o) for x,o in zip(x0_guess,opt_out.x)])
     return tuple(def_return)
 
-def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new_rad=0.00248, angDeg=5.5, gi=0.4, gdoti=0.0):
+def cluster_clusters(clust_ids, results_d, g_init, gdot_init, t_ref, rad):
+    """ function to cluster the clusters"""
+    # Get all the fitted
+    cluster_counter = Counter()
+    cluster_id_dict = {}
+    trkl_cid_dict = {}
+    points, label_dict = [], {}
+    i=0
+
+    fit_dict, agg_dict = _nlin_fits(clust_ids, results_d, g_init, gdot_init, t_ref)
+    for k,v in fit_dict.items():
+        trkl_cid_dict[k] = list(set([ob[0] for tr in agg_dict[k] for ob in tr]))
+        points.append(v[0])
+        label_dict[i] = k
+        i+=1
+
+    points = np.array(points)
+
+    tree = scipy.spatial.cKDTree(points)
+    matches = tree.query_ball_tree(tree, rad)
+
+    for j, match in enumerate(matches):
+        cluster_list =[]
+        for idx in match:
+            c_id = label_dict[idx]
+            cluster_list.extend(trkl_cid_dict[c_id])
+            for trkl_id in trkl_cid_dict[c_id]:
+                cluster_id_dict.update({trkl_id: j})
+        cluster_key='|'.join(sorted(cluster_list))
+        cluster_counter.update({cluster_key: 1})
+
+    return cluster_counter, cluster_id_dict
+
+def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new_rad=0.00124, angDeg=5.5, gi=0.4, gdoti=0.0):
     """  This function takes a whole window of time (with dt=15 about a month)
     and calculates the fitted orbits for each cluster already clustered in the
     passed file.  Then we compare the old transform values (the ones we clustered on
@@ -255,7 +290,7 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
         So, for each cluster check the nearness of the surrounding points in
     the old transform and pick canidates (with an arb large radius) to get transformed
     with the new g and gdot (that come from our cluster orbit fits), and then compare
-    again, with new radius (defaults to 2x the initial best radius). Then if new
+    again, with new radius (defaults to the initial best radius). Then if new
     cluster id's have been added to the cluster via this method, add them to
     cluster_counter and change the realted tracklet id in cluster_id_dict (newer
     clusters superseed older in the case of overlap (per our standard protocol).
@@ -269,7 +304,7 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
           rad; the best rad value, based on dt=15 we calculated rad to be 0.00124
                 so that is the default value.
           new_rad; the radius we use to cluster once we transform the approximately
-                    close points with the fitted g and gdot.  Defaults to 2(rad)=0.0248.
+                    close points with the fitted g and gdot.  Defaults to 0.00124.
           angDeg; float, the angle in degrees
           gi; float; the initial, asserted gamma value (distance from observer to the asteroid)
           gdoti; float; the initial, asserted gamma dot value of radial velocity.
@@ -305,7 +340,7 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
         fit_dict, agg_dict = _nlin_fits(clust_ids,results_d,gi,gdoti,t_ref)
 
         # Note: Read the docs for explaination of this procedure
-        for k,v in fit_dict.items():
+        for k,v in sorted(fit_dict.items(), key=lambda kv: len(kv[1][3])):
             # k is the cluster id and v is the fitted 6 params, fval, err, and arr_err
             params = v[0]
             a,adot,b,bdot,g,gdot = params
@@ -318,7 +353,8 @@ def fit_extend(infilename, clust_ids, pixels, nside, n, dt=15., rad=0.00124, new
                 nt_label_dict = []
                 for idx in canidates:
                     tracklet_id = ot_label_dict[idx].strip()
-                    nt_points.append(np.array(fit_tracklet(t_ref, g, gdot, results_d[tracklet_id])[:4]))
+                    nt_a,nt_ad,nt_b,nt_bd = fit_tracklet(t_ref, g, gdot, results_d[tracklet_id])[:4]
+                    nt_points.append(np.array((nt_a, nt_ad*dt, nt_b, nt_bd*dt)))
                     nt_label_dict.append(tracklet_id)
 
                 nt_tree = scipy.spatial.cKDTree(nt_points)
