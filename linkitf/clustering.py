@@ -246,46 +246,53 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
     # print('diff',[abs(x-o) for x,o in zip(x0_guess,opt_out.x)])
     return tuple(def_return)
 
-def cluster_clusters(clust_ids, results_d, g_init, gdot_init, t_ref, rad):
-    """ function to cluster the clusters"""
-    # Get all the fitted
+def postprocessing(clust_counter):
+    """ This function will take in a cluster counter and find the right tracklets
+    (elements of the largest cluster) and fit those clusters with our orbit fitting
+    algorithm.  This step is postprocessing for each healpix window, and preps the
+    fitted results to be transformed and compared across time frames."""
+
+def cluster_clusters(infilename, clust_count, pixels, nside, n, dt=15., rad=0.00124, new_rad=0.00124, angDeg=5.5, gi=0.4, gdoti=0.0):
+    """ wrapper that accomplishes the loop over pixels """
+    res_dicts = get_res_dict(infilename, pixels, nside, n, angDeg=angDeg, g=gi, gdot=gdoti)
+    t_ref = util.lunation_center(n)
     cluster_counter = Counter()
-    cluster_id_dict = {}
-    trkl_cid_dict = {}
-    points, label_dict = [], {}
-    i=0
 
-    fit_dict, agg_dict = _nlin_fits(clust_ids, results_d, g_init, gdot_init, t_ref)
-    for k,v in fit_dict.items():
-        trkl_cid_dict[k] = list(set([ob[0] for tr in agg_dict[k] for ob in tr]))
-        points.append(v[0])
-        label_dict[i] = k
-        i+=1
+    # For each chunk of sky in our window
+    for pix, results_d in res_dicts.items():
 
-    points = np.array(points)
+        points, labels = [], []
 
-    tree = scipy.spatial.cKDTree(points)
-    matches = tree.query_ball_tree(tree, rad)
+        fit_dict, agg_dict = _nlin_fits2(clust_count, results_d, gi, gdoti, t_ref)
+        print(len(clust_count.keys()), len(fit_dict.keys()))
+        for k,v in fit_dict.items():
+            points.append(v[0])
+            labels.append(k)
 
-    for j, match in enumerate(matches):
-        cluster_list =[]
-        for idx in match:
-            c_id = label_dict[idx]
-            cluster_list.extend(trkl_cid_dict[c_id])
-            for trkl_id in trkl_cid_dict[c_id]:
-                cluster_id_dict.update({trkl_id: j})
-        cluster_key='|'.join(sorted(cluster_list))
-        cluster_counter.update({cluster_key: 1})
+        points = np.array(points)
+        if len(points)<2:
+            continue
+        tree = scipy.spatial.cKDTree(points)
+        matches = tree.query_ball_tree(tree, new_rad)
 
-    return cluster_counter, cluster_id_dict
+        for j, match in enumerate(matches):
+            cluster_list =[]
+            for idx in match:
+                c_id = labels[idx]
+                cluster_list.extend(c_id.split('|'))
+            cluster_key='|'.join(sorted(cluster_list))
+            cluster_counter.update({cluster_key: 1})
 
-def cluster_clusters2(clust_count, results_d, g_init, gdot_init, t_ref, rad):
+    return cluster_counter, get_cid_dict(cluster_counter,shared=False)
+
+def _cluster_clusters(clust_count, results_d, g_init, gdot_init, t_ref, rad):
     """ function to cluster the clusters"""
     # Get all the fitted
     cluster_counter = Counter()
     points, labels = [], []
 
     fit_dict, agg_dict = _nlin_fits2(clust_count, results_d, g_init, gdot_init, t_ref)
+
     for k,v in fit_dict.items():
         points.append(v[0])
         labels.append(k)
@@ -1441,3 +1448,35 @@ def generate_sky_region_files(infilename, pixels, nside, n, angDeg=5.5, g=0.4, g
 #     # Now return a list of lists of tracklets we validated are correctly clustered.
 #     # the second return value is a bool stating if all the tracklets we initially had were in the valid cluster
 #     return validated_cluster, len(validated_cluster)==len(tracklets)
+# def cluster_clusters(clust_ids, results_d, g_init, gdot_init, t_ref, rad):
+#     """ function to cluster the clusters"""
+#     # Get all the fitted
+#     cluster_counter = Counter()
+#     cluster_id_dict = {}
+#     trkl_cid_dict = {}
+#     points, label_dict = [], {}
+#     i=0
+#
+#     fit_dict, agg_dict = _nlin_fits(clust_ids, results_d, g_init, gdot_init, t_ref)
+#     for k,v in fit_dict.items():
+#         trkl_cid_dict[k] = list(set([ob[0] for tr in agg_dict[k] for ob in tr]))
+#         points.append(v[0])
+#         label_dict[i] = k
+#         i+=1
+#
+#     points = np.array(points)
+#
+#     tree = scipy.spatial.cKDTree(points)
+#     matches = tree.query_ball_tree(tree, rad)
+#
+#     for j, match in enumerate(matches):
+#         cluster_list =[]
+#         for idx in match:
+#             c_id = label_dict[idx]
+#             cluster_list.extend(trkl_cid_dict[c_id])
+#             for trkl_id in trkl_cid_dict[c_id]:
+#                 cluster_id_dict.update({trkl_id: j})
+#         cluster_key='|'.join(sorted(cluster_list))
+#         cluster_counter.update({cluster_key: 1})
+#
+#     return cluster_counter, cluster_id_dict
