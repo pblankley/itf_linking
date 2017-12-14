@@ -17,6 +17,7 @@ import pickle
 from operator import add
 import matplotlib.cm as cm
 import matplotlib.colors as mlc
+from mpl_toolkits.mplot3d import Axes3D
 
 
 def number_clusters_plot(pix_runs,true_count,outpath=''):
@@ -411,26 +412,83 @@ def vis_cluster_tracklet_diff(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gd
     plt.title('Arrows with orbit fit. Darker colors represent fitted clusters, and lighter clusters represent individual tracklets.')
     plt.savefig('{}cluster_tracklet_diff.pdf'.format(subdir))
 
+def orbitalElements2Cartesian(a, e, I, peri, node, E):
+    """ Convert orbital elements to Cartesian coordinates in the Solar System.
+    Args:
+        a (float): semi-major axis (AU)
+        e (float): eccentricity
+        I (float): inclination (radians)
+        peri (float): longitude of perihelion (radians)
+        node (float): longitude of ascending node (radians)
+        E (float): eccentric anomaly (radians)
+    """
+    # Check if the orbit is parabolic or hyperbolic
+    if e >=1:
+        e = 0.99999999
 
-def vis_orbit(params):
+    # True anomaly
+    theta = 2*np.arctan(np.sqrt((1.0 + e)/(1.0 - e))*np.tan(E/2.0))
+
+    # Distance from the Sun to the poin on orbit
+    r = a*(1.0 - e*np.cos(E))
+
+    # Cartesian coordinates
+    x = r*(np.cos(node)*np.cos(peri + theta) - np.sin(node)*np.sin(peri + theta)*np.cos(I))
+    y = r*(np.sin(node)*np.cos(peri + theta) + np.cos(node)*np.sin(peri + theta)*np.cos(I))
+    z = r*np.sin(peri + theta)*np.sin(I)
+
+    return x, y, z
+
+def vis_orbits(orb_elements,limits=True,sun=True):
     """ This function is for visualization of orbits fit by our fitting function,
     and it is set up to use "orbital elements" as input. The orbital elements are
     a (semi-major axis), e (eccentricity), i (inclination), w (argument of perigee)
     om (right ascention), v (true/mean anomoly).  They are passed into the fuction
     in the order (a,e,i,w,om,v) in params. v is the only parameter that will vary
     quickly among orbits that are truly similar.
+
+    Source: https://github.com/CroatianMeteorNetwork/CMN-codes/blob/master/Orbit%20Plotter/PlotOrbits.py
     ----------
-    Args: params; array, (a,e,i,w,om,v) for an orbit as mentioned above.
+    Args: params; array or arrays, each inner array is of form (a,e,i,w,om,v)
+                    for an orbit as mentioned above.
     ----------
     Returns: None, plots and saves the orbit.
     """
-    a,e,i,w,om,v = params
-    theta = np.linspace(0,2*np.pi, 360)
+    # Setup the plot
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
 
-    # The actual equation
-    r = (a*(1-e**2))/(1+e*cos(theta))
+    # plot the Sun
+    if sun:
+        ax.scatter(0, 0, 0, c='yellow', s=100)
 
-    plt.polar(theta, r)
-    plt.xlabel('x')
-    plt.ylabel('y')
-    
+    # Eccentric anomaly (full range)
+    E = np.linspace(-np.pi, np.pi, 100)
+
+    # Plot the given orbits
+    for i, orbit in enumerate(orb_elements):
+        a, e, I, peri, node = orbit
+
+        # Take extra steps in E if the orbit is very large
+        if a > 50:
+            E = np.linspace(-np.pi, np.pi, int((a/20.0)*100))
+
+        # Get the orbit in the cartesian space
+        x, y, z = orbitalElements2Cartesian(a, e, I, peri, node, E)
+
+        # Plot orbits
+        # c='#32CD32'
+        ax.plot(x, y, z, c='blue',alpha=0.1)
+
+    # Add limits (in AU)
+    if limits:
+        ax.set_xlim3d(-5,5)
+        ax.set_ylim3d(-5,5)
+        ax.set_zlim3d(-5,5)
+
+    ax.set_title('Asteroid orbits around the sun.')
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+    plt.tight_layout()
+    plt.show()

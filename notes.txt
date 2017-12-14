@@ -24,3 +24,15 @@ Ryan can do 5 and 6  (with the pickled results that is), he will not be able to 
 6. display some sexy plots with our resulting orbits.  
 7. sleep
 
+
+FOR THE TIME CONVERSION MONTH TO MONTH:
+
+when m is the mean anomoly (where we are on the orbit)
+m = m0 + n*(t-t0)
+
+when n = sqrt(GMSun / a^3) 
+
+when a is the semi-major axis (the first orbital element parameter)
+
+Happy month to month asteroid hunting!
+ 
