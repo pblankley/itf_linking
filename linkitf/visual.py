@@ -410,3 +410,21 @@ def vis_cluster_tracklet_diff(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gd
     plt.ylabel('beta')
     plt.title('Arrows with orbit fit. Darker colors represent fitted clusters, and lighter clusters represent individual tracklets.')
     plt.savefig('{}cluster_tracklet_diff.pdf'.format(subdir))
+
+
+def vis_orbit():
+    """ This function is for visualization of orbits fit by our fitting function,
+    and it is set up to use "orbital elements" as input. """
+
+    cos = np.cos
+    pi = np.pi
+
+    a = 5
+    e = 0.3
+    theta = np.linspace(0,2*pi, 360)
+    r = (a*(1-e**2))/(1+e*cos(theta))
+    plt.polar(theta, r)
+
+    print(np.c_[r,theta])
+
+    plt.show()
