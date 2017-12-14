@@ -246,11 +246,46 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
     # print('diff',[abs(x-o) for x,o in zip(x0_guess,opt_out.x)])
     return tuple(def_return)
 
-def postprocessing(clust_counter):
+def postprocessing(infilename, clust_counter, pixels, nside, n, angDeg=5.5, gi=0.4, gdoti=0.0):
     """ This function will take in a cluster counter and find the right tracklets
     (elements of the largest cluster) and fit those clusters with our orbit fitting
     algorithm.  This step is postprocessing for each healpix window, and preps the
     fitted results to be transformed and compared across time frames."""
+    cid_dict = {} #get_cid_dict(clust_counter, shared=False)
+    helper = {}
+    for str_cid in clust_counter.keys():
+        for tid in str_cid.split('|'):
+            if tid in cid_dict.keys() and helper[tid]<len(str_cid.split('|')):
+                cid_dict[tid] = str_cid
+                helper[tid] = len(str_cid.split('|'))
+            else:
+                cid_dict[tid] = str_cid
+                helper[tid] = len(str_cid.split('|'))
+    # cid_dict now has tracklet id as key and joined cluster id as value
+
+    res_dicts = get_res_dict(infilename, pixels, nside, n, angDeg=angDeg, g=gi, gdot=gdoti)
+    t_ref = util.lunation_center(n)
+    fit_dict= {}
+
+    # For each chunk of sky in our window
+    for pix, results_d in res_dicts.items():
+
+        agg_dict = defaultdict(list)
+        for tid, v in cid_dict.items():
+            if results_d[tid]!=[]:
+                agg_dict[v].append([tuple([tid]+list(obs)) for obs in results_d[tid]])
+
+        # k is the str cluster id, v is the tracklets in the cluster id
+        for k, v in agg_dict.items():
+            params, func_val, chisq, chiarr = full_fit_t_loss(t_ref, gi, gdoti, v)
+            if k not in fit_dict.keys():
+                fit_dict[k] = (params, func_val, chisq, chiarr)
+            else:
+                if len(fit_dict[k][3])<len(chiarr):
+                    fit_dict[k] = (params, func_val, chisq, chiarr)
+
+    return fit_dict
+
 
 def cluster_clusters(infilename, clust_count, pixels, nside, n, dt=15., rad=0.00124, new_rad=0.00124, angDeg=5.5, gi=0.4, gdoti=0.0):
     """ wrapper that accomplishes the loop over pixels """
