@@ -6,4 +6,21 @@ we should transform to "orbital elements" (per Matt) and then we can easily comp
 the orbital elements will depend on kepcart.  
 
 orbital element nu changes the position of the asteroid on the orbit and it is what we will scale back for reference time comparison.  Of the first 5 other params the middle three (omega, alpha, and Omega) are the most important for comparison, but we can KD Tree over all 5 if we so choose.
+ 
+orbital elements is working!! 
+
+big TODO before the project is done from a code perspective:
+
+Ryan can do 5 and 6  (with the pickled results that is), he will not be able to run the .trans files bc of healpix reliance.
+
+
+1. get orbital elements transform the right reference vector in the pixels
+1.2 try to fix the fit_extend method and incorporate it, or save it for later.
+1.3 build off the cluster of clusters method if fit_extend is not better.
+2. once 1 is done we will have orbital elements for each cluster in a given month (.trans file)
+3. pickle the results for later comparison. 
+4. get several .trans files and run them all.
+5. unpickle the results of those runs and cluster.
+6. display some sexy plots with our resulting orbits.  
+7. sleep
 
