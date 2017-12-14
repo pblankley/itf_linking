@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import math
 import healpy as hp
+from libr import kepcart as kc
 import collections
 import astropy
 from collections import defaultdict
@@ -114,7 +115,38 @@ def get_observations(cluster_key, tracklets_dict, observation_array, sep='|'):
             array.append(observation_array[idx].rstrip())
     return array
 
+def _pbasis_to_State(pbasis):
+    """ Takes in the elements a, adot, b, bdot, g, gdot and converts them to
+    a inner C object that carries around important information for transformation.
+    --------
+    Args:
+    --------
+    Returns: State object. useful only for the transformation from elliptic
+                coordinates to orbital elements in this context.
+    """
+    a,adot,b,bdot,g,gdot = pbasis
+    return kc.State(a,adot,b,bdot,g,gdot)
 
+
+def pbasis_to_elements(pbasis, GM=MPC_library.Constants.GMsun):
+    """ This function takes in the pbasis array, that is the values
+    a, adot, b, bdot, g, gdot.  It then uses the kepcart library to convert
+    the pbasis to the orbital elements.  The orbital elements are returned in
+    the order a, e, i, big_omega, little_omega, m. Where a is alpha, e is
+    eccentricity, i is inclination (angle from the equatorial plane), big_omega
+    is the angle from the earth's equatorical reference, little_omega is the angle
+    from the line of nodes (intersection of equatorial and orbital planes) to the
+    plane on the orbit that is closest to the sun, and m is the mean anomoly (which
+    is the angle at which the object is at (located) on its orbit).  The m value is
+    the fast varying parameter over time.
+    ---------
+    Args: pbasis, a numpy array with the values: a, adot, b, bdot, g, gdot
+          GM; the universal gravity constant times the center object mass in question
+                defaults to G*(mass of sun) as that is our usual orbit center.
+    ---------
+    Returns: numpy array with the values: a, e, i, big_omega, little_omega, m
+    """
+    return kc.keplerian(GM, _pbasis_to_State(pbasis))
 
 
 
