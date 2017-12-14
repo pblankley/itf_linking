@@ -150,7 +150,7 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
         obs_in_trkl = [i[1:] for i in trkl]
         x0_guess.append(np.array(fit_tracklet(t_ref, g_init, gdot_init, obs_in_trkl)[:4]))
     x0_guess = np.append(np.array(x0_guess).mean(axis=0), [g_init,gdot_init])
-
+  
     def loss(arr):
         """ Loss function: aggregate the errors from the loss of the theta_x and theta_y
         with equal weighting and minimize this function. Regretablly, this function
@@ -203,6 +203,62 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
 
         return np.array([der_a.sum(), der_b.sum(), der_c.sum(), der_h.sum(), der_f.sum(), der_g.sum()])
 
+
+    def loss_hessian(arr):
+        md = np.array(args)
+        L_arr = md[:,4] #theta_x
+        M_arr = md[:,5] #theta_y
+        t_arr = md[:,3] #t_emit
+        x_arr = md[:,0]
+        y_arr = md[:,1]
+        z_arr = md[:,2]
+        a,b,p,h,f,k = arr
+        
+        
+        H_overall = np.zeros([6,6])
+        #print(y.shape)
+        for i in range(len(L_arr)):
+            H = np.zeros([6,6])
+        
+            L = L_arr[i]
+            M = M_arr[i]
+            t = t_arr[i]
+            x = x_arr[i]
+            y = y_arr[i]
+            z = z_arr[i]
+            H[0,0]=2/(1+k*t-f*z)**2 #a,a
+            H[0,1]=(2*t)/(1+k*t-f*z)**2 #a,b
+            H[0,2]=0 #a,p
+            H[0,3]=0 #a,h
+            H[0,4]=(-2*(x*(1+k*t+f*z)+z*(-2*a+L-2*b*t+k*L*t-f*L*z)))/(1+k*t-f*z)**3 #a,f
+            H[0,5]=(2*t*(-2*a+L-2*b*t+k*L*t+2*f*x-f*L*z))/(1+k*t-f*z)**3 #a,k
+            H[1,1]=(2*t**2)/(1+k*t-f*z)**2 #b,b
+            H[1,2]=0 #b,p
+            H[1,3]=0 #b,h
+            H[1,4]=(-2*t*(-(((a+b*t-f*x)*z)/(1+k*t-f*z)**2)+x/(1+k*t-f*z)))/(1+k*t-f*z)-(2*t*z*(L-(a+b*t-f*x)/(1+k*t-f*z)))/(1+k*t-f*z)**2 #b,f
+            H[1,5]=(2*t**2*(-2*a+L-2*b*t+k*L*t+2*f*x-f*L*z))/(1+k*t-f*z)**3 #b,k
+            H[2,2]=2/(1+k*t-f*z)**2 #p,p
+            H[2,3]=(2*t)/(1+k*t-f*z)**2 #p,h
+            H[2,4]=(2*(-y+M*z))/(1+k*t-f*z)**2+(4*z*(p+h*t-f*y+M*(-1-k*t+f*z)))/(1+k*t-f*z)**3 #p,f
+            H[2,5]=(2*t*(M-2*p-2*h*t+k*M*t+2*f*y-f*M*z))/(1+k*t-f*z)**3 #p,k
+            H[3,3]=(2*t**2)/(1+k*t-f*z)**2 #h,h
+            H[3,4]=(-2*t*(-(((p+h*t-f*y)*z)/(1+k*t-f*z)**2)+y/(1+k*t-f*z)))/(1+k*t-f*z)-(2*t*z*(M-(p+h*t-f*y)/(1+k*t-f*z)))/(1+k*t-f*z)**2 #h,f
+            H[3,5]=(2*t**2*(M-2*p-2*h*t+k*M*t+2*f*y-f*M*z))/(1+k*t-f*z)**3 #h,k
+            H[4,4]=2*(-(((a+b*t-f*x)*z)/(1+k*t-f*z)**2)+x/(1+k*t-f*z))**2+2*((-2*(a+b*t-f*x)*z**2)/(1+k*t-f*z)**3+(2*x*z)/(1+k*t-f*z)**2)*(L-(a+b*t-f*x)/(1+k*t-f*z))+2*(-(((p+h*t-f*y)*z)/(1+k*t-f*z)**2)+y/(1+k*t-f*z))**2+2*((-2*(p+h*t-f*y)*z**2)/(1+k*t-f*z)**3+(2*y*z)/(1+k*t-f*z)**2)*(M-(p+h*t-f*y)/(1+k*t-f*z)) #f,f
+            H[4,5]=(2*t*(a+b*t-f*x)*(-(((a+b*t-f*x)*z)/(1+k*t-f*z)**2)+x/(1+k*t-f*z)))/(1+k*t-f*z)**2+(4*t*(a+b*t-f*x)*z*(L-(a+b*t-f*x)/(1+k*t-f*z)))/(1+k*t-f*z)**3-(2*t*x*(L-(a+b*t-f*x)/(1+k*t-f*z)))/(1+k*t-f*z)**2+(2*t*(p+h*t-f*y)*(-(((p+h*t-f*y)*z)/(1+k*t-f*z)**2)+y/(1+k*t-f*z)))/(1+k*t-f*z)**2+(4*t*(p+h*t-f*y)*z*(M-(p+h*t-f*y)/(1+k*t-f*z)))/(1+k*t-f*z)**3-(2*t*y*(M-(p+h*t-f*y)/(1+k*t-f*z)))/(1+k*t-f*z)**2 #f,k
+            H[5,5]=(2*t**2*(a+b*t-f*x)**2)/(1+k*t-f*z)**4+(2*t**2*(p+h*t-f*y)**2)/(1+k*t-f*z)**4-(4*t**2*(a+b*t-f*x)*(L-(a+b*t-f*x)/(1+k*t-f*z)))/(1+k*t-f*z)**3-(4*t**2*(p+h*t-f*y)*(M-(p+h*t-f*y)/(1+k*t-f*z)))/(1+k*t-f*z)**3 #k,k
+
+            #enforce symmetry
+            for i in range(0,6):
+                for j in range(i+1,6):
+                    H[j,i]=H[i,j]
+                        
+            H_overall+=H
+        return H_overall
+        
+    #print('calling loss-hessian')
+    #loss_hessian(x0_guess)
+
     min_options = {}
     if force_itercount!=None:
         min_options['maxiter'] = force_itercount
@@ -211,7 +267,7 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
         if method=='CG':
             min_options['gtol'] = 0
         if method in ['Powell','Newton-CG','TNC']:
-            min_options['xtol'] = 0
+            min_options['xtol'] = -1 if method=='Newton-CG' else 0
         if method in ['Powell','L-BFGS-B','TNC','SLSQP']:
             min_options['ftol'] = 0
         if method in ['CG','BFGS','L-BFGS-B','TNC','dogleg','trust-ncg']:
@@ -224,9 +280,16 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
             min_options['tol'] = 0
             min_options['catol'] = 0
 
+    use_hessian = False
+    #automatically use Hessian if we use one of these methods...
+    if method=='dogleg' or method=='trust-ncg' or method=='Newton-CG': use_hessian=True
     jc = loss_jacobian if use_jacobian else None
+    hs = loss_hessian if use_hessian else None
 
-    opt_out = minimize(loss,x0=np.array(x0_guess), method=method, tol=tol, options=min_options, jac=jc)
+    #min_options['disp']=True
+
+
+    opt_out = minimize(loss,x0=np.array(x0_guess), method=method, tol=tol, options=min_options, jac=jc, hess=hs)
 
     # calc chi sq
     err,err_arr = error(opt_out.x,args,flag=flag)
