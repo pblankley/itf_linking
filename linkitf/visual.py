@@ -203,6 +203,59 @@ def make_figure(filename,cluster=False,subs=True,outpath=''):
     plt.close()
     plt.ion()
 
+def make_figure_sharing(filename,cluster=False,subs=True,outpath=''):
+    plt.ioff()
+    mxs, cxs, mys, cys, cids =[], [], [], [], []
+    smxs, scxs, smys, scys, scids =[], [], [], [], []
+    # print(cluster,subs)
+    if cluster and subs:
+        # print('in here')
+        for line in open(filename):
+            if line.startswith('#'):
+                continue
+            desig, cx, mx, cy, my, cid = line.split()
+
+            if int(cid)==-42:
+                # print('in here')
+                smxs.append(float(mx))
+                scxs.append(float(cx))
+                smys.append(float(my))
+                scys.append(float(cy))
+                scids.append(float(cid))
+
+            if int(cid)!=-1:
+
+                mxs.append(float(mx))
+                cxs.append(float(cx))
+                mys.append(float(my))
+                cys.append(float(cy))
+                cids.append(float(cid))
+
+    fig,ax=plt.subplots(figsize=(18, 16))
+
+    colormap = cm.inferno
+    if cluster:
+        colormap = mlc.ListedColormap ( np.random.rand ( 256,3))
+
+    ax.quiver(cxs, cys, mxs, mys, cids, cmap=colormap,scale=0.3, width=0.0003)
+    ax.quiver(scxs, scys, smxs, smys, color='black',scale=0.3, width=0.0003)
+
+    ax.set_xlim(-0.1, 0.1)
+    ax.set_ylim(-0.1, 0.1)
+    ax.set_xlabel('alpha')
+    ax.set_ylabel('beta')
+    if cluster:
+        ax.set_title('Clusters with 3 or more tracklets in this time slice, colored by cluster.')
+    else:
+        ax.set_title('All tracklets in this time slice, colored by time difference.')
+    if outpath=='':
+        outfile = filename+'.pdf'
+    else:
+        outfile = outpath +'.pdf'
+    plt.savefig(outfile)
+    plt.close()
+    plt.ion()
+
 def vis_cluster_arrows_err(params_dict,c_res,log=False,subdir=''):
     """ This function plots arrows (just cluster fits).  The color is
     given by the error value (currently one of chi squared, or rms) for each
@@ -210,7 +263,7 @@ def vis_cluster_arrows_err(params_dict,c_res,log=False,subdir=''):
     (on viridis) represent the larger errors and the darker purple represent the
     low errors.
     ----------
-    Args: params_dict; 
+    Args: params_dict;
     """
     arrows = []
     for v,ch in zip(params_dict.values(),c_res):
@@ -357,3 +410,27 @@ def vis_cluster_tracklet_diff(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gd
     plt.ylabel('beta')
     plt.title('Arrows with orbit fit. Darker colors represent fitted clusters, and lighter clusters represent individual tracklets.')
     plt.savefig('{}cluster_tracklet_diff.pdf'.format(subdir))
+
+
+def vis_orbit(params):
+    """ This function is for visualization of orbits fit by our fitting function,
+    and it is set up to use "orbital elements" as input. The orbital elements are
+    a (semi-major axis), e (eccentricity), i (inclination), w (argument of perigee)
+    om (right ascention), v (true/mean anomoly).  They are passed into the fuction
+    in the order (a,e,i,w,om,v) in params. v is the only parameter that will vary
+    quickly among orbits that are truly similar.
+    ----------
+    Args: params; array, (a,e,i,w,om,v) for an orbit as mentioned above.
+    ----------
+    Returns: None, plots and saves the orbit.
+    """
+    a,e,i,w,om,v = params
+    theta = np.linspace(0,2*np.pi, 360)
+
+    # The actual equation
+    r = (a*(1-e**2))/(1+e*cos(theta))
+
+    plt.polar(theta, r)
+    plt.xlabel('x')
+    plt.ylabel('y')
+    
