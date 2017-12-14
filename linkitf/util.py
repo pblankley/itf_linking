@@ -115,20 +115,26 @@ def get_observations(cluster_key, tracklets_dict, observation_array, sep='|'):
             array.append(observation_array[idx].rstrip())
     return array
 
-def _pbasis_to_State(pbasis):
+def _pbasis_to_State(v):
     """ Takes in the elements a, adot, b, bdot, g, gdot and converts them to
     a inner C object that carries around important information for transformation.
     --------
-    Args:
+    Args: numpy array of length 6 with elements a, adot, b, bdot, g, and gdot
     --------
     Returns: State object. useful only for the transformation from elliptic
                 coordinates to orbital elements in this context.
     """
-    a,adot,b,bdot,g,gdot = pbasis
-    return kc.State(a,adot,b,bdot,g,gdot)
+    alpha, alpha_dot, beta, beta_dot, gamma, gamma_dot = v
+    z = 1.0/gamma
+    x = alpha*z
+    y = beta*z
+    xd = alpha_dot*z
+    yd = beta_dot*z
+    zd = gamma_dot*z
+    return kc.State(x, y, z, xd, yd, zd)
 
 
-def pbasis_to_elements(pbasis, GM=MPC_library.Constants.GMsun):
+def pbasis_to_elements(pbasis, r_ref, GM=MPC_library.Constants.GMsun):
     """ This function takes in the pbasis array, that is the values
     a, adot, b, bdot, g, gdot.  It then uses the kepcart library to convert
     the pbasis to the orbital elements.  The orbital elements are returned in
@@ -146,8 +152,13 @@ def pbasis_to_elements(pbasis, GM=MPC_library.Constants.GMsun):
     ---------
     Returns: numpy array with the values: a, e, i, big_omega, little_omega, m
     """
-    return kc.keplerian(GM, _pbasis_to_State(pbasis))
-
+    mat = xyz_to_proj_matrix(r_ref).T
+    state = _pbasis_to_State(pbasis)
+    x, y, z, xd, yd, zd = state.x, state.y, state.z, state.xd, state.yd, state.zd
+    xp, yp, zp = np.dot(mat, np.array((x, y, z)))
+    xdp, ydp, zdp =  np.dot(mat, np.array((xd, yd, zd)))
+    statep = kc.State(xp, yp, zp, xdp, ydp, zdp)
+    return kc.keplerian(GM, statep)
 
 
 
@@ -637,186 +648,186 @@ def fit_tracklet_grav(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun, eps2=1e
 #
 #     return cluster_counter
 
-def fit_tracklet(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
-    """Here's a version that incorporates radial gravitational
-    acceleration. """
-
-    t_emit = [(obs[0]-obs[1]-t_ref) for obs in v]
-    acc_z = -GM*g*g
-    fac =[(1.0 + gdot*t + 0.5*g*acc_z*t*t - g*obs[7]) for obs, t in zip(v, t_emit)]
-
-    A = np.vstack([t_emit, np.ones(len(t_emit))]).T
-
-    x = [obs[2]*f + obs[5]*g for obs, f in zip(v, fac)]
-    mx, cx = np.linalg.lstsq(A, x)[0]
-
-    y = [obs[3]*f + obs[6]*g for obs, f in zip(v, fac)]
-    my, cy = np.linalg.lstsq(A, y)[0]
-
-    return (cx, mx, cy, my, t_emit[0])
-
-def get_tracklet_obs(vec,lines):
-    results_dict = defaultdict(list)
-
-    # vec is the reference direction in equatorial coordinates
-    # so we rotate to ecliptic, because we want to.
-    vec = np.array(vec)
-    # ecl_vec = np.dot(rot_mat, vec)
-    # vec = ecl_vec
-    vec = vec/np.linalg.norm(vec)
-    # mat is a rotation matrix that converts from ecliptic
-    # vectors to the projection coordinate system.
-    # The projection coordinate system has z outward,
-    # x parallel to increasing ecliptic longitude, and
-    # y northward, making a right-handed system.
-    mat = xyz_to_proj_matrix(vec)
-
-    # Loop over all the lines from a *.trans file.
-    for line in lines:
-        if line.startswith('#'):
-            # Concatenate all header lines?
-            header = line.rstrip()
-        else:
-            lineID = line[:43]
-            trackletID = line[0:12]
-
-            jd_tdb = float(line[43:57])
-            dtp = float(line[139:150])
-
-            # Get unit vector to target
-            x_target, y_target, z_target = line[58:98].split()
-            r_target = np.array([float(x_target), float(y_target), float(z_target)])
-
-            # Rotate to ecliptic coordinates
-            # r_target_ec = np.dot(rot_mat, r_target)
-
-            # Rotate to projection coordinates
-            theta_x, theta_y, theta_z = np.dot(mat, r_target)
-
-            # Ignore theta_z after this; it should be very nearly 1.
-
-            # Get observatory position, ultimately in projection coordinates.
-            x_obs, y_obs, z_obs = line[98:138].split()
-            r_obs = np.array([float(x_obs), float(y_obs), float(z_obs)])
-
-            # Rotate to ecliptic coordinates
-            # r_obs_ec = np.dot(rot_mat, r_obs)
-
-            # Rotate to projection coordinates
-            xe, ye, ze = np.dot(mat, r_obs)
-
-            # This is the light travel time
-            dlt = ze/MPC_library.Constants.speed_of_light
-
-            # Append the resulting data to a dictionary keye do trackletID.
-            results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
-
-    return results_dict
-# cluster positions z inputs: t_ref, g_gdot_pairs, vec, lines, fit_tracklet_func=fit_tracklet
-def _return_arrows_resuts(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func):
-        # Now that we have the observations for each tracklet gathered together,
-        # we iterate through the tracklets, doing a fit for each one.
-    master_results = {}
-    for g_gdot in g_gdot_pairs:
-        g, gdot = g_gdot
-
-        results = []
-        for k, v in results_dict.items():
-
-            cx, mx, cy, my, t0 = fit_tracklet_func(t_ref, g, gdot, v)
-            result = (k, cx, mx, cy, my, t0)
-            results.append(result)
-
-        master_results[g_gdot] = results
-    return master_results
-
-def _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, vec, outfilename):
-        # Now that we have the observations for each tracklet gathered together,
-        # we iterate through the tracklets, doing a fit for each one.
-    for g_gdot in g_gdot_pairs:
-        g, gdot = g_gdot
-        results = []
-        for k, v in results_dict.items():
-
-            cx, mx, cy, my, t0 = fit_tracklet_func(t_ref, g, gdot, v)
-            outstring = "%12s %16.9lf %16.9lf %16.9lf %16.9lf %16.9lf\n" % (k, cx, mx, cy, my, t0)
-
-            results.append(outstring)
-
-        if len(results)>0:
-            with open(outfilename, 'w') as outfile:
-                outstring = '#  g = %lf\n' % (g)
-                outfile.write(outstring)
-                outstring = '#  gdot = %lf\n' % (gdot)
-                outfile.write(outstring)
-                outstring = '#  vec= %lf, %lf, %lf\n' % (vec[0], vec[1], vec[2])
-                outfile.write(outstring)
-                outstring = '#  desig              alpha         alpha_dot       beta             beta_dot         dt \n'
-                outfile.write(outstring)
-                for outstring in results:
-                    outfile.write(outstring)
-
-def transform_to_arrows(t_ref, g_gdot_pairs, vec, lines, outfilename='', makefiles=False, fit_tracklet_func=fit_tracklet):
-    """
-    Args: g_gdot pairs is a list of tuples with the g, gdot pairs to use
-            for the select_clusters_z functionality, pass the g, gdot in
-            [(g,gdot)] format
-    This is the one to use.  This routine will be used repeatedly.
-
-    Trying a slightly different approach.
-    The set of lines that are being passed in have
-    been selected to be in the same region of sky
-    for an assumed distance.  We are going to re-transform
-    those assuming a fixed z (or gamma) value with respect
-    to the sun and the reference direction, rather than a
-    fixed r, at the reference time
-
-    Rotate observatory positions to projection coordinates,
-    and recalculate simple z-based light-time correction.
-
-    Rotate the observations to projection coordinates,
-    but they will be theta_x, theta_y only
-
-    Fit the simple abg model, for fixed gamma and
-    possibly gamma_dot.
-    Cluster function that gets passed to the cluster_sky_regions function
-    Here I am doing the same thing as the previous routine, but without files.
-
-    It takes a reference time (t_ref), a set of z, zdot pairs (z_zdot_pairs),
-    a reference direction vector (vec), and a set of observation lines that
-    have been selected for a region of sky and time slice (lines)
-
-    It returns a dictionary of results that have z, zdot pairs as keys and
-    sets of fitted tracklets as results.  Each result has the form:
-
-    trackletID alpha alpha_dot beta beta_dot t_emit,
-    where t_emit is the light time-corrected time relative to the reference
-    time.  The coordinates are now in tangent plane projection.
-    """
-    results_dict = get_tracklet_obs(vec,lines)
-
-    if not makefiles:
-        return _return_arrows_resuts(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func)
-    else:
-        _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, vec, outfilename)
-
-# Should just passing the selection function, to avoid code duplication
-def generate_sky_region_files(infilename, nside, n, angDeg=5.5, g=0.4, gdot=0.0):
-    hp_dict = defaultdict(list)
-    with open(infilename) as file:
-        for line in file:
-            if line.startswith('#'):
-                continue
-            pix = int(line.split()[-1])
-            hp_dict[pix].append(line)
-
-    for i in range(hp.nside2npix(nside)):
-        vec = hp.pix2vec(nside, i, nest=True)
-        neighbors = hp.query_disc(nside, vec, angDeg*np.pi/180., inclusive=True, nest=True)
-        lines = []
-        for pix in neighbors:
-            for line in hp_dict[pix]:
-                lines.append(line)
-        outfilename = infilename.rstrip('.trans') + '_hp_' + ('%03d' % (i)) + '_g'+ ('%.2lf' % (g))+'_gdot' + ('%+5.1le' % (gdot))
-        if len(lines) > 0:
-            transform_to_arrows(lunation_center(n), [(g, gdot)], vec, lines, outfilename, makefiles=True)
+# def fit_tracklet(t_ref, g, gdot, v, GM=MPC_library.Constants.GMsun):
+#     """Here's a version that incorporates radial gravitational
+#     acceleration. """
+#
+#     t_emit = [(obs[0]-obs[1]-t_ref) for obs in v]
+#     acc_z = -GM*g*g
+#     fac =[(1.0 + gdot*t + 0.5*g*acc_z*t*t - g*obs[7]) for obs, t in zip(v, t_emit)]
+#
+#     A = np.vstack([t_emit, np.ones(len(t_emit))]).T
+#
+#     x = [obs[2]*f + obs[5]*g for obs, f in zip(v, fac)]
+#     mx, cx = np.linalg.lstsq(A, x)[0]
+#
+#     y = [obs[3]*f + obs[6]*g for obs, f in zip(v, fac)]
+#     my, cy = np.linalg.lstsq(A, y)[0]
+#
+#     return (cx, mx, cy, my, t_emit[0])
+#
+# def get_tracklet_obs(vec,lines):
+#     results_dict = defaultdict(list)
+#
+#     # vec is the reference direction in equatorial coordinates
+#     # so we rotate to ecliptic, because we want to.
+#     vec = np.array(vec)
+#     # ecl_vec = np.dot(rot_mat, vec)
+#     # vec = ecl_vec
+#     vec = vec/np.linalg.norm(vec)
+#     # mat is a rotation matrix that converts from ecliptic
+#     # vectors to the projection coordinate system.
+#     # The projection coordinate system has z outward,
+#     # x parallel to increasing ecliptic longitude, and
+#     # y northward, making a right-handed system.
+#     mat = xyz_to_proj_matrix(vec)
+#
+#     # Loop over all the lines from a *.trans file.
+#     for line in lines:
+#         if line.startswith('#'):
+#             # Concatenate all header lines?
+#             header = line.rstrip()
+#         else:
+#             lineID = line[:43]
+#             trackletID = line[0:12]
+#
+#             jd_tdb = float(line[43:57])
+#             dtp = float(line[139:150])
+#
+#             # Get unit vector to target
+#             x_target, y_target, z_target = line[58:98].split()
+#             r_target = np.array([float(x_target), float(y_target), float(z_target)])
+#
+#             # Rotate to ecliptic coordinates
+#             # r_target_ec = np.dot(rot_mat, r_target)
+#
+#             # Rotate to projection coordinates
+#             theta_x, theta_y, theta_z = np.dot(mat, r_target)
+#
+#             # Ignore theta_z after this; it should be very nearly 1.
+#
+#             # Get observatory position, ultimately in projection coordinates.
+#             x_obs, y_obs, z_obs = line[98:138].split()
+#             r_obs = np.array([float(x_obs), float(y_obs), float(z_obs)])
+#
+#             # Rotate to ecliptic coordinates
+#             # r_obs_ec = np.dot(rot_mat, r_obs)
+#
+#             # Rotate to projection coordinates
+#             xe, ye, ze = np.dot(mat, r_obs)
+#
+#             # This is the light travel time
+#             dlt = ze/MPC_library.Constants.speed_of_light
+#
+#             # Append the resulting data to a dictionary keye do trackletID.
+#             results_dict[trackletID].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
+#
+#     return results_dict
+# # cluster positions z inputs: t_ref, g_gdot_pairs, vec, lines, fit_tracklet_func=fit_tracklet
+# def _return_arrows_resuts(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func):
+#         # Now that we have the observations for each tracklet gathered together,
+#         # we iterate through the tracklets, doing a fit for each one.
+#     master_results = {}
+#     for g_gdot in g_gdot_pairs:
+#         g, gdot = g_gdot
+#
+#         results = []
+#         for k, v in results_dict.items():
+#
+#             cx, mx, cy, my, t0 = fit_tracklet_func(t_ref, g, gdot, v)
+#             result = (k, cx, mx, cy, my, t0)
+#             results.append(result)
+#
+#         master_results[g_gdot] = results
+#     return master_results
+#
+# def _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, vec, outfilename):
+#         # Now that we have the observations for each tracklet gathered together,
+#         # we iterate through the tracklets, doing a fit for each one.
+#     for g_gdot in g_gdot_pairs:
+#         g, gdot = g_gdot
+#         results = []
+#         for k, v in results_dict.items():
+#
+#             cx, mx, cy, my, t0 = fit_tracklet_func(t_ref, g, gdot, v)
+#             outstring = "%12s %16.9lf %16.9lf %16.9lf %16.9lf %16.9lf\n" % (k, cx, mx, cy, my, t0)
+#
+#             results.append(outstring)
+#
+#         if len(results)>0:
+#             with open(outfilename, 'w') as outfile:
+#                 outstring = '#  g = %lf\n' % (g)
+#                 outfile.write(outstring)
+#                 outstring = '#  gdot = %lf\n' % (gdot)
+#                 outfile.write(outstring)
+#                 outstring = '#  vec= %lf, %lf, %lf\n' % (vec[0], vec[1], vec[2])
+#                 outfile.write(outstring)
+#                 outstring = '#  desig              alpha         alpha_dot       beta             beta_dot         dt \n'
+#                 outfile.write(outstring)
+#                 for outstring in results:
+#                     outfile.write(outstring)
+#
+# def transform_to_arrows(t_ref, g_gdot_pairs, vec, lines, outfilename='', makefiles=False, fit_tracklet_func=fit_tracklet):
+#     """
+#     Args: g_gdot pairs is a list of tuples with the g, gdot pairs to use
+#             for the select_clusters_z functionality, pass the g, gdot in
+#             [(g,gdot)] format
+#     This is the one to use.  This routine will be used repeatedly.
+#
+#     Trying a slightly different approach.
+#     The set of lines that are being passed in have
+#     been selected to be in the same region of sky
+#     for an assumed distance.  We are going to re-transform
+#     those assuming a fixed z (or gamma) value with respect
+#     to the sun and the reference direction, rather than a
+#     fixed r, at the reference time
+#
+#     Rotate observatory positions to projection coordinates,
+#     and recalculate simple z-based light-time correction.
+#
+#     Rotate the observations to projection coordinates,
+#     but they will be theta_x, theta_y only
+#
+#     Fit the simple abg model, for fixed gamma and
+#     possibly gamma_dot.
+#     Cluster function that gets passed to the cluster_sky_regions function
+#     Here I am doing the same thing as the previous routine, but without files.
+#
+#     It takes a reference time (t_ref), a set of z, zdot pairs (z_zdot_pairs),
+#     a reference direction vector (vec), and a set of observation lines that
+#     have been selected for a region of sky and time slice (lines)
+#
+#     It returns a dictionary of results that have z, zdot pairs as keys and
+#     sets of fitted tracklets as results.  Each result has the form:
+#
+#     trackletID alpha alpha_dot beta beta_dot t_emit,
+#     where t_emit is the light time-corrected time relative to the reference
+#     time.  The coordinates are now in tangent plane projection.
+#     """
+#     results_dict = get_tracklet_obs(vec,lines)
+#
+#     if not makefiles:
+#         return _return_arrows_resuts(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func)
+#     else:
+#         _write_arrows_files(results_dict, t_ref, g_gdot_pairs, fit_tracklet_func, vec, outfilename)
+#
+# # Should just passing the selection function, to avoid code duplication
+# def generate_sky_region_files(infilename, nside, n, angDeg=5.5, g=0.4, gdot=0.0):
+#     hp_dict = defaultdict(list)
+#     with open(infilename) as file:
+#         for line in file:
+#             if line.startswith('#'):
+#                 continue
+#             pix = int(line.split()[-1])
+#             hp_dict[pix].append(line)
+#
+#     for i in range(hp.nside2npix(nside)):
+#         vec = hp.pix2vec(nside, i, nest=True)
+#         neighbors = hp.query_disc(nside, vec, angDeg*np.pi/180., inclusive=True, nest=True)
+#         lines = []
+#         for pix in neighbors:
+#             for line in hp_dict[pix]:
+#                 lines.append(line)
+#         outfilename = infilename.rstrip('.trans') + '_hp_' + ('%03d' % (i)) + '_g'+ ('%.2lf' % (g))+'_gdot' + ('%+5.1le' % (gdot))
+#         if len(lines) > 0:
+#             transform_to_arrows(lunation_center(n), [(g, gdot)], vec, lines, outfilename, makefiles=True)
