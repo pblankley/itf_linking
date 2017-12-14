@@ -912,7 +912,6 @@ def _get_cluster_counter(master, dt, rad, mincount):
         tracklet_id as the key and the cluster id as the value of the dict.
     """
     cluster_counter = Counter()
-    cluster_id_dict = {}
     for pix, d in master.items():
         for g_gdot, arrows in d.items():
 
@@ -934,11 +933,10 @@ def _get_cluster_counter(master, dt, rad, mincount):
                     for idx in match:
                         tracklet_id = label_dict[idx].strip()
                         cluster_list.append(tracklet_id)
-                        cluster_id_dict.update({tracklet_id: j})
                     cluster_key='|'.join(sorted(cluster_list))
                     cluster_counter.update({cluster_key: 1})
 
-    return cluster_counter, cluster_id_dict
+    return cluster_counter, get_cid_dict(cluster_counter,shared=False)
 
 
 def _rates_to_results(rates_dict, dts):
