@@ -412,19 +412,25 @@ def vis_cluster_tracklet_diff(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gd
     plt.savefig('{}cluster_tracklet_diff.pdf'.format(subdir))
 
 
-def vis_orbit():
+def vis_orbit(params):
     """ This function is for visualization of orbits fit by our fitting function,
-    and it is set up to use "orbital elements" as input. """
+    and it is set up to use "orbital elements" as input. The orbital elements are
+    a (semi-major axis), e (eccentricity), i (inclination), w (argument of perigee)
+    om (right ascention), v (true/mean anomoly).  They are passed into the fuction
+    in the order (a,e,i,w,om,v) in params. v is the only parameter that will vary
+    quickly among orbits that are truly similar.
+    ----------
+    Args: params; array, (a,e,i,w,om,v) for an orbit as mentioned above.
+    ----------
+    Returns: None, plots and saves the orbit.
+    """
+    a,e,i,w,om,v = params
+    theta = np.linspace(0,2*np.pi, 360)
 
-    cos = np.cos
-    pi = np.pi
-
-    a = 5
-    e = 0.3
-    theta = np.linspace(0,2*pi, 360)
+    # The actual equation
     r = (a*(1-e**2))/(1+e*cos(theta))
+
     plt.polar(theta, r)
-
-    print(np.c_[r,theta])
-
-    plt.show()
+    plt.xlabel('x')
+    plt.ylabel('y')
+    
