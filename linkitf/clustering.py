@@ -150,7 +150,7 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
         obs_in_trkl = [i[1:] for i in trkl]
         x0_guess.append(np.array(fit_tracklet(t_ref, g_init, gdot_init, obs_in_trkl)[:4]))
     x0_guess = np.append(np.array(x0_guess).mean(axis=0), [g_init,gdot_init])
-  
+
     def loss(arr):
         """ Loss function: aggregate the errors from the loss of the theta_x and theta_y
         with equal weighting and minimize this function. Regretablly, this function
@@ -213,13 +213,13 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
         y_arr = md[:,1]
         z_arr = md[:,2]
         a,b,p,h,f,k = arr
-        
-        
+
+
         H_overall = np.zeros([6,6])
         #print(y.shape)
         for i in range(len(L_arr)):
             H = np.zeros([6,6])
-        
+
             L = L_arr[i]
             M = M_arr[i]
             t = t_arr[i]
@@ -252,10 +252,10 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
             for i in range(0,6):
                 for j in range(i+1,6):
                     H[j,i]=H[i,j]
-                        
+
             H_overall+=H
         return H_overall
-        
+
     #print('calling loss-hessian')
     #loss_hessian(x0_guess)
 
@@ -309,7 +309,7 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
     # print('diff',[abs(x-o) for x,o in zip(x0_guess,opt_out.x)])
     return tuple(def_return)
 
-def postprocessing(infilename, clust_counter, pixels, nside, n, angDeg=5.5, gi=0.4, gdoti=0.0):
+def postprocessing(infilename, clust_counter, pixels, nside, n, orb_elms=True, angDeg=5.5, gi=0.4, gdoti=0.0):
     """ This function will take in a cluster counter and find the right tracklets
     (elements of the largest cluster) and fit those clusters with our orbit fitting
     algorithm.  This step is postprocessing for each healpix window, and preps the
@@ -331,8 +331,9 @@ def postprocessing(infilename, clust_counter, pixels, nside, n, angDeg=5.5, gi=0
           gdoti; float; the initial, asserted gamma dot value of radial velocity.
     ----------
     Returns: fit_dict where the key is cluster_id and the value is the a tuple with
-                the related, fitted a,adot,b,bdot,g,gdot parameters for that cluster,
-                obj function value, error value, and array of observation level errors.
+                EITHER the related, fitted a,adot,b,bdot,g,gdot parameters for that
+                cluster OR the realted, transformed a, e, i, big_omega, little_omega, m
+                from the orbital elements transform, and array of observation level errors.
      """
     cid_dict = {} #get_cid_dict(clust_counter, shared=False)
     helper = {}
@@ -353,6 +354,9 @@ def postprocessing(infilename, clust_counter, pixels, nside, n, angDeg=5.5, gi=0
     # For each chunk of sky in our window
     for pix, results_d in res_dicts.items():
 
+        # referencd vector for transform
+        r_ref = hp.pix2vec(nside, pix, nest=True)
+
         agg_dict = defaultdict(list)
         for tid, v in cid_dict.items():
             if results_d[tid]!=[]:
@@ -361,11 +365,16 @@ def postprocessing(infilename, clust_counter, pixels, nside, n, angDeg=5.5, gi=0
         # k is the str cluster id, v is the tracklets in the cluster id
         for k, v in agg_dict.items():
             params, func_val, chisq, chiarr = full_fit_t_loss(t_ref, gi, gdoti, v)
+
+            # perform transform from pbasis to orbital elements
+            if orb_elms:
+                params = util.pbasis_to_elements(params, r_ref)
+
             if k not in fit_dict.keys():
-                fit_dict[k] = (params, func_val, chisq, chiarr)
+                fit_dict[k] = (params, chiarr)
             else:
-                if len(fit_dict[k][3])<len(chiarr):
-                    fit_dict[k] = (params, func_val, chisq, chiarr)
+                if len(fit_dict[k][1])<len(chiarr):
+                    fit_dict[k] = (params, chiarr)
 
     return fit_dict
 
