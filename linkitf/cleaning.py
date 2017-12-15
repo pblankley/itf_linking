@@ -22,8 +22,8 @@ def split_MPC_file(filename):
     """ This routine opens and reads filename, separating the records into
     those in the 1-line and 2-line formats. The 2-line format lines are merged
     into single 160-character records for processing line-by-line. """
-    filename_1_line = filename.rstrip('.txt')+"_1_line.txt"
-    filename_2_line = filename.rstrip('.txt')+"_2_line.txt"
+    filename_1_line = filename.replace('.txt','')+"_1_line.txt"
+    filename_2_line = filename.replace('.txt','')+"_2_line.txt"
     with open(filename_1_line, 'w') as f1_out, open(filename_2_line, 'w') as f2_out:
         line1=None
         with open(filename, 'r') as f:
@@ -105,7 +105,7 @@ def separate_time_windows(tracklets, sortedTracklets, tracklets_jd_dict, file_st
             if jd_tdb<util.lunation_center(n)-dt:
                 break
             if n not in files:
-                outfile = file_stem.rstrip('.mpc')+'_'+str(util.lunation_center(n))+'_pm'+str(dt)+suff
+                outfile = file_stem.replace('.mpc','')+'_'+str(util.lunation_center(n))+'_pm'+str(dt)+suff
                 files[n] = open(outfile, 'w')
                 files[n].write(header+'\n')
             for line in tracklets[desig]:
@@ -165,15 +165,15 @@ def index_positions(n, r_func, file_stem, dt=45., nside=8):
     This generates a file called *.trans, and it incorporates
     the distance assumed in the file name.
     """
-    infilename = file_stem.rstrip('.mpc')+'_'+str(util.lunation_center(n))+'_pm'+str(dt)+'.mpc'
+    infilename = file_stem.replace('.mpc','')+'_'+str(util.lunation_center(n))+'_pm'+str(dt)+'.mpc'
     try:
       open(infilename, 'r')
     except IOError:
       return 0
-    t_ref = lunation_center(n)
+    t_ref = util.lunation_center(n)
     r_ref = r_func(t_ref)
     r_name = "_r%.1lf" % (r_ref)
-    outfilename = file_stem.rstrip('.mpc')+'_'+str(util.lunation_center(n))+'_pm'+str(dt)+r_name+'.trans'
+    outfilename = file_stem.replace('.mpc','')+'_'+str(util.lunation_center(n))+'_pm'+str(dt)+r_name+'.trans'
 
     with open(infilename, 'r') as infile, open(outfilename, 'w') as outfile:
         for line in infile:

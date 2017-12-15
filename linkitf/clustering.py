@@ -101,6 +101,7 @@ def error(opt_result,args,flag='chi'):
 
     return err/len(err_arr),err_arr
 
+# TODO: update
 def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM=MPC_library.Constants.GMsun,
                     tol=None, force_itercount=None, use_jacobian=True, method='BFGS', details=False):
     """ This function needs to take in all the observations over the cluster of
@@ -309,6 +310,57 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
     # print('diff',[abs(x-o) for x,o in zip(x0_guess,opt_out.x)])
     return tuple(def_return)
 
+# TODO: DOCS
+def cluster_months(fit_dicts, rad, GM=MPC_library.Constants.GMsun):
+    """ This function will take in the fit_dict output of the postprocessing step
+    and find then cluster the orbital elements (or parameters) based on a reference
+    time.  This will hopefully product valid, month to month clusters.
+    ---------     all the fit_dicts for every month
+    Args: fit_dicts where the key is string cluster_id and the value is the a tuple with
+                EITHER the related, fitted a,adot,b,bdot,g,gdot parameters for that
+                cluster OR the realted, transformed a, e, i, big_omega, little_omega, m
+                from the orbital elements transform, and array of observation level errors.
+          times where times is a list of the same length as fit dicts and contains the julian
+                data associated with the fit_dict at the related index.
+          t_ref, float, the reference time we are scaling everything back to. get this
+                value by calling util.lunation_center()
+    ---------
+    Returns: fit_dict where the key is string cluster_id and the value is the a tuple with
+                EITHER the related, fitted a,adot,b,bdot,g,gdot parameters for that
+                cluster OR the realted, transformed a, e, i, big_omega, little_omega, m
+                from the orbital elements transform, and array of observation level errors.
+                The difference here is that the fit dict has been clustered and re-fit.
+    ---------
+    Note: n = np.sqrt(GM/a**3); m = m+n*(t-t_ref) for the time transformation.
+          We are not doing this transformation because it only has to do with the
+          position of the asteroid, not the orbit itself.
+    """
+    final_dict = {}
+    points,labels = [],[]
+    for fit_dict in fit_dicts:
+        for clust, orb in fit_dict.items():
+            # a, e, i, bo, lo, m = orb[0]
+            labels.append((clust,np.mean(orb[1])))
+            points.append(orb[0][:5])
+
+    tree = scipy.spatial.cKDTree(np.array(points))
+    matches = tree.query_ball_tree(tree, rad)
+
+    for i,match in enumerate(matches):
+        if len(match)>0:
+            cluster_list =[]
+            orb_params = [points[i]]
+            for idx in match:
+                tracklet_ids = labels[idx][0].split('|')
+                cluster_list.extend(tracklet_ids)
+                orb_params.append(points[idx])
+            cluster_key='|'.join(sorted(cluster_list))
+            final_dict[cluster_key] = (np.array(orb_params).mean(axis=0), labels[i][1])
+
+    return final_dict, get_cid_dict(final_dict,shared=False)
+
+
+
 def postprocessing(infilename, clust_counter, pixels, nside, n, orb_elms=True, angDeg=5.5, gi=0.4, gdoti=0.0):
     """ This function will take in a cluster counter and find the right tracklets
     (elements of the largest cluster) and fit those clusters with our orbit fitting
@@ -419,7 +471,7 @@ def cluster_clusters(infilename, clust_count, pixels, nside, n, dt=15., rad=0.00
         points, labels = [], []
 
         fit_dict = _nlin_fits(clust_count, results_d, gi, gdoti, t_ref)
-        print(len(clust_count.keys()), len(fit_dict.keys()))
+        # print(len(clust_count.keys()), len(fit_dict.keys()))
         for k,v in fit_dict.items():
             points.append(v[0])
             labels.append(k)
@@ -452,7 +504,7 @@ def iswrong(id_set):
     stem_counter = member_counts('|'.join(list(id_set)))
     return len(stem_counter)>1
 
-def get_cid_dict(cluster_counter,shared=True):
+def get_cid_dict(cluster_counter,shared=True,string=False):
     """ This function takes in a cluster_counter object from a result of
     find_clusters() or cluster_clusters().  The purpose of this function is to
     make a strategic choice of how to display or organize overlapping clusters.
@@ -486,10 +538,16 @@ def get_cid_dict(cluster_counter,shared=True):
                     cluster_id_dict[tid] = i
             else:
                 if tid in cluster_id_dict.keys() and helper[tid]<len(str_cid.split('|')):
-                    cluster_id_dict[tid] = i
+                    if string:
+                        cluster_id_dict[tid] = str_cid
+                    else:
+                        cluster_id_dict[tid] = i
                     helper[tid] = len(str_cid.split('|'))
                 else:
-                    cluster_id_dict[tid] = i
+                    if string:
+                        cluster_id_dict[tid] = str_cid
+                    else:
+                        cluster_id_dict[tid] = i
                     helper[tid] = len(str_cid.split('|'))
 
     return cluster_id_dict
@@ -582,12 +640,12 @@ def fit_extend(infilename, clust_count, pixels, nside, n, dt=15., rad=0.00124, n
 
                 cluster_list =[]
                 for idx in matches:
-                    print(idx,matches)
+                    # print(idx,matches)
                     tracklet_id = nt_label_dict[idx].strip()
                     cluster_list.append(tracklet_id)
 
-                if set(cluster_list)!=set():
-                    print(set(cluster_list))
+                # if set(cluster_list)!=set():
+                #     # print(set(cluster_list))
                 trkl_ids_in_cluster |= set(cluster_list)
                 cluster_key='|'.join(sorted(list(trkl_ids_in_cluster)))
                 cluster_counter.update({cluster_key: 1})
@@ -800,7 +858,7 @@ def get_tracklet_obs(vec,lines):
             # This is the light travel time
             dlt = ze/MPC_library.Constants.speed_of_light
 
-            # Append the resulting data to a dictionary keye do trackletID.
+            # Append the resulting data to a dictionary keyed on trackletID.
             results_dict[trackletID.strip()].append((jd_tdb, dlt, theta_x, theta_y, theta_z, xe, ye, ze))
 
     return results_dict
@@ -941,12 +999,12 @@ def cluster_sky_regions(g_gdot_pairs, pixels, t_ref, infilename, nside=8, angDeg
     hp_dict = util.get_hpdict(infilename)
 
     pixel_results = {}
-    print('Starting run...')
+    # print('Starting run...')
     for prog,i in enumerate(pixels):
         # Percent complete
-        out = prog * 1. / len(pixels) * 100
-        sys.stdout.write("\r%d%%" % out)
-        sys.stdout.flush()
+        # out = prog * 1. / len(pixels) * 100
+        # sys.stdout.write("\r%d%%" % out)
+        # sys.stdout.flush()
 
         # Probably don't need to repeat the vector neighbor calculation.
         # This can just be stored.
@@ -959,9 +1017,9 @@ def cluster_sky_regions(g_gdot_pairs, pixels, t_ref, infilename, nside=8, angDeg
         if len(lines) > 0:
             pixel_results[i] = cluster_func(t_ref, g_gdot_pairs, vec, lines)
 
-    sys.stdout.write("\r%d%%" % 100)
-    print('\n')
-    print('Run finished!')
+    # sys.stdout.write("\r%d%%" % 100)
+    # print('\n')
+    # print('Run finished!')
     return pixel_results
 
 

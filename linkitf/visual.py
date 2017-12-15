@@ -439,23 +439,23 @@ def orbitalElements2Cartesian(a, e, I, peri, node, E):
 
     return x, y, z
 
-def vis_orbits(orb_elements,limits=True,sun=True):
+def vis_orbits(orb_elements,limits=True,sun=True,alpha=0.1,c='blue',figsize=(6,6)):
     """ This function is for visualization of orbits fit by our fitting function,
     and it is set up to use "orbital elements" as input. The orbital elements are
     a (semi-major axis), e (eccentricity), i (inclination), w (argument of perigee)
-    om (right ascention), v (true/mean anomoly).  They are passed into the fuction
-    in the order (a,e,i,w,om,v) in params. v is the only parameter that will vary
+    om (right ascention), m (true/mean anomoly).  They are passed into the fuction
+    in the order (a,e,i,w,om,m) in params. v is the only parameter that will vary
     quickly among orbits that are truly similar.
 
     Source: https://github.com/CroatianMeteorNetwork/CMN-codes/blob/master/Orbit%20Plotter/PlotOrbits.py
     ----------
-    Args: params; array or arrays, each inner array is of form (a,e,i,w,om,v)
+    Args: params; array or arrays, each inner array is of form (a,e,i,w,om,m)
                     for an orbit as mentioned above.
     ----------
     Returns: None, plots and saves the orbit.
     """
     # Setup the plot
-    fig = plt.figure()
+    fig = plt.figure(figsize=figsize)
     ax = fig.gca(projection='3d')
 
     # plot the Sun
@@ -478,7 +478,7 @@ def vis_orbits(orb_elements,limits=True,sun=True):
 
         # Plot orbits
         # c='#32CD32'
-        ax.plot(x, y, z, c='blue',alpha=0.1)
+        ax.plot(x, y, z, c=c,alpha=alpha)
 
     # Add limits (in AU)
     if limits:
