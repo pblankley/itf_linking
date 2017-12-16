@@ -111,7 +111,7 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
     Args: t_ref; lunation_center
           g_init; out initial guess for g (the value we asserted before)
           gdot_init; out initial guess for gdot (the value we asserted before)
-          all_obs; list of tuples, where each tuple is a observation and all the
+          list_of_tracklets; list of tuples, where each tuple is a observation and all the
                     observations make up at minimum 3 tracklets in a cluster.
           tol; float, the maximum tolerance we have for error in our minimization
           use_jacobian; bool, a T/F flag for whether to use the jacobian or not.
@@ -140,9 +140,6 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
         print('Jacobian not supported by this method, will ignore flag')
     working_obs = [itm[1:] for ob in list_of_tracklets for itm in ob]
 
-    # Left over from calculating the mean of the times of the obs to get as new ref
-    # t_ref_mean = sum(obs[0] for obs in working_obs)/len(working_obs)
-
     args = [(obs[5],obs[6],obs[7],obs[0]-obs[1]-t_ref,obs[2],obs[3]) for obs in working_obs]
 
     # Get the avg of the trackelt params
@@ -151,7 +148,7 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
         obs_in_trkl = [i[1:] for i in trkl]
         x0_guess.append(np.array(fit_tracklet(t_ref, g_init, gdot_init, obs_in_trkl)[:4]))
     x0_guess = np.append(np.array(x0_guess).mean(axis=0), [g_init,gdot_init])
-  
+
     def loss(arr):
         """ Loss function: aggregate the errors from the loss of the theta_x and theta_y
         with equal weighting and minimize this function. Regretablly, this function
@@ -214,13 +211,13 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
         y_arr = md[:,1]
         z_arr = md[:,2]
         a,b,p,h,f,k = arr
-        
-        
+
+
         H_overall = np.zeros([6,6])
         #print(y.shape)
         for i in range(len(L_arr)):
             H = np.zeros([6,6])
-        
+
             L = L_arr[i]
             M = M_arr[i]
             t = t_arr[i]
@@ -253,7 +250,7 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
             for i in range(0,6):
                 for j in range(i+1,6):
                     H[j,i]=H[i,j]
-                        
+
             H_overall+=H
         return H_overall
 
@@ -278,9 +275,9 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
     hs = loss_hessian if use_hessian else None
 
     opt_out = minimize(loss,x0=np.array(x0_guess), method=method, tol=tol, options=min_options, jac=jc, hess=hs)
-    
+
     nit = (opt_out.nit if 'nit' in opt_out else math.nan) # number of iterations in solver
-    
+
     # calc error
     err,err_arr = error(opt_out.x,args,flag=flag)
 
