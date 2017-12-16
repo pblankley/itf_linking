@@ -101,32 +101,28 @@ def error(opt_result,args,flag='chi'):
     return err/len(err_arr),err_arr
 
 def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM=MPC_library.Constants.GMsun,
-                    tol=None, force_itercount=None, use_jacobian=True, method='BFGS', details=False):
+                    tol=None, use_jacobian=True, method='BFGS', details=False):
     """ This function needs to take in all the observations over the cluster of
     tracklets (min of 3 tracklets), and return the a,adot,b,bdot,g and gdot.
 
     We will then use the resulting gamma and gamma dot to fit the tracklets
-    individualally, and compare with the chi sq.
+    individually, and compare with the chi sq.
     --------
     Args: t_ref; lunation_center
           g_init; out initial guess for g (the value we asserted before)
           gdot_init; out initial guess for gdot (the value we asserted before)
-          list_of_tracklets; list of tuples, where each tuple is a observation and all the
+          all_obs; list of tuples, where each tuple is a observation and all the
                     observations make up at minimum 3 tracklets in a cluster.
-          flag; str, one of 'rms', or 'chi' specifies which error term to use
-                    (see error() function for more)
           tol; float, the maximum tolerance we have for error in our minimization
-          force_itercount; int, the maximum number of iterations we allow the solver
           use_jacobian; bool, a T/F flag for whether to use the jacobian or not.
           method; str, specifies the method used to minimize the loss. Must be one
-                    of 'COBYLA','L-BFGS-B','Powell','BFGS','TNC','dogleg',
-                    'trust-ncg','SLSQP','Newton-CG', or 'CG'. NOTE: defaults to BFGS.
+                    of 'Nelder-Mead', 'COBYLA','L-BFGS-B','Powell','BFGS','TNC','dogleg',
+                    'trust-ncg','SLSQP','Newton-CG', or 'CG'.
           details; bool, flag for the user to specify if they want the extra
                     information about the minimization (number of iterations
-                    of the solver, and the number of function calls to the
-                    objective function, jacobian, hessian respectively.
+                    of the solver).
     --------
-    Returns: tuple with (parms, function min, chisq) where the first element is
+    Returns: tuple with (params, function min, chisq) where the first element is
                 parameters calculated by the nonlinear fit, the second is the
                 value of the loss function when completely minimized, the third
                 value is the chisq statistic, and the fourth is the array of
@@ -136,9 +132,16 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
                     description added to it.
     """
     valid_methods = ['Nelder-Mead','COBYLA','L-BFGS-B','Powell','BFGS','TNC','dogleg','trust-ncg','SLSQP','Newton-CG','CG']
+    nosupport_jacobian = ['Nelder-Mead','COBYLA','Powell']
     if method not in valid_methods:
         raise ValueError('Specify a valid minimization method, or leave as default')
+    if method in nosupport_jacobian and use_jacobian:
+        use_jacobian = False
+        print('Jacobian not supported by this method, will ignore flag')
     working_obs = [itm[1:] for ob in list_of_tracklets for itm in ob]
+
+    # Left over from calculating the mean of the times of the obs to get as new ref
+    # t_ref_mean = sum(obs[0] for obs in working_obs)/len(working_obs)
 
     args = [(obs[5],obs[6],obs[7],obs[0]-obs[1]-t_ref,obs[2],obs[3]) for obs in working_obs]
 
@@ -148,7 +151,7 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
         obs_in_trkl = [i[1:] for i in trkl]
         x0_guess.append(np.array(fit_tracklet(t_ref, g_init, gdot_init, obs_in_trkl)[:4]))
     x0_guess = np.append(np.array(x0_guess).mean(axis=0), [g_init,gdot_init])
-
+  
     def loss(arr):
         """ Loss function: aggregate the errors from the loss of the theta_x and theta_y
         with equal weighting and minimize this function. Regretablly, this function
@@ -211,13 +214,13 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
         y_arr = md[:,1]
         z_arr = md[:,2]
         a,b,p,h,f,k = arr
-
-
+        
+        
         H_overall = np.zeros([6,6])
         #print(y.shape)
         for i in range(len(L_arr)):
             H = np.zeros([6,6])
-
+        
             L = L_arr[i]
             M = M_arr[i]
             t = t_arr[i]
@@ -250,18 +253,12 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
             for i in range(0,6):
                 for j in range(i+1,6):
                     H[j,i]=H[i,j]
-
+                        
             H_overall+=H
         return H_overall
 
-    #print('calling loss-hessian')
-    #loss_hessian(x0_guess)
-
     min_options = {}
-    if force_itercount!=None:
-        min_options['maxiter'] = force_itercount
-        # Additional options to enforce fixed number of iterations, based on solvers
-        tol = 0
+    if tol==0: #additional options for specific solvers to ensure max accuracy
         if method=='CG':
             min_options['gtol'] = 0
         if method in ['Powell','Newton-CG','TNC']:
@@ -270,10 +267,6 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
             min_options['ftol'] = 0
         if method in ['CG','BFGS','L-BFGS-B','TNC','dogleg','trust-ncg']:
             min_options['gtol'] = 0
-        if method in ['Powell']:
-            min_options['maxfev'] = 10e8
-        if method in ['L-BFGS-B']:
-            min_options['maxfun'] = 10e8
         if method in ['COBYLA']:
             min_options['tol'] = 0
             min_options['catol'] = 0
@@ -285,20 +278,16 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
     hs = loss_hessian if use_hessian else None
 
     opt_out = minimize(loss,x0=np.array(x0_guess), method=method, tol=tol, options=min_options, jac=jc, hess=hs)
-
-    # calc chi sq
+    
+    nit = (opt_out.nit if 'nit' in opt_out else math.nan) # number of iterations in solver
+    
+    # calc error
     err,err_arr = error(opt_out.x,args,flag=flag)
 
-    nit = (opt_out.nit if 'nit' in opt_out else math.nan)
-    njev = (opt_out.njev if 'njev' in opt_out else math.nan)
-    nhev = (opt_out.nhev if 'nhev' in opt_out else math.nan)
-
-    # Number of iterations performed by the solver,
-    # number of evaluations of the objective function, jacobian, hessian
-    additional_returns = [nit,opt_out.nfev,njev,nhev]
+    # number of evaluations of the objective function, error, jacobian, hessian
     def_return = [opt_out.x, opt_out.fun, err, err_arr]
     if details:
-        def_return.extend(additional_returns)
+        def_return.append(nit)
 
     return tuple(def_return)
 
