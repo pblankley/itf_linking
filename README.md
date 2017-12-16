@@ -33,7 +33,7 @@ If you want to run the ITF go to the folder below and get this file: data/train/
 
 Once you have the file you need (for either the ITF or training or both) put it in a folder of your choice, and go into driver.py, change the path to the training or ITF file (whichever applies in your case) to the path of where you put it, and follow the instructions in the driver file.
 
-If you want to run the orbit_fitting notebook using the precomputed training files, just grab the entire data/ foler from the below Google Drive folder and put it in the linkitf/ folder of the repo. The notebook should run without a hitch. 
+If you want to run the orbit_fitting notebook using the precomputed training files, just grab the entire data/ folder from the below Google Drive folder and put it in the linkitf/ folder of the repo. The notebook should run without a hitch. 
 
 Google Drive Folder:
 https://drive.google.com/drive/u/0/folders/1wYIXQePMZlOSC4czXHbUhU-__E1dGQC4
