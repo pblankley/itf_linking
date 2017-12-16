@@ -32,8 +32,13 @@ def test_xyz_proj_mat():
     test2= np.array((7.431,1.1132,-2.536465))
     assert(np.allclose(np.linalg.norm(np.dot(rm2,test2)),np.linalg.norm(test2)))
 
-
+def test_pbasis_to_elem():
+    g=0.4
+    adot = (2*np.pi*g**1.5)/365.25
+    res = util.pbasis_to_elements([0.0, adot, 0, 0.0, g, 0], (1, 0, 0))
+    assert(np.array_equal(res,[2.5000944373998295, 3.7773533038132356e-05, 0.0, 0.0, 0.0, 0.0]))
 
 test_xyz_proj_mat()
 test_lunation()
 test_equatorial_to_ecliptic()
+test_pbasis_to_elem()

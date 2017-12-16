@@ -18,7 +18,7 @@ from operator import add
 import matplotlib.cm as cm
 import matplotlib.colors as mlc
 from mpl_toolkits.mplot3d import Axes3D
-
+from clustering import fit_tracklet, generate_sky_region_files
 
 def number_clusters_plot(pix_runs,true_count,outpath=''):
     """ This function plots the number of clusters we find vs the
@@ -135,7 +135,7 @@ def _get_vals_for_plot(filename,cluster,subs):
     """ Get the columns and process based on the
     passed flags for the make_figure function."""
     mxs, cxs, mys, cys, dts =[], [], [], [], []
-    # print(cluster,subs)
+
     if cluster and subs:
         # print('in here')
         for line in open(filename):
@@ -161,7 +161,14 @@ def _get_vals_for_plot(filename,cluster,subs):
             dts.append(float(dt))
     return mxs, cxs, mys, cys, dts
 
-def make_figure(filename,cluster=False,subs=True,outpath=''):
+# TODO docs
+def cluster_by_color(infilename,pixel,nside,n,angDeg=5.5, g=0.4, gdot=0.0, cluster_id_dict={},limits=True,outpath='',save=True):
+    """ docs"""
+    generate_sky_region_files(infilename, [pixel], nside, n, angDeg, g, gdot, cluster_id_dict)
+    outfilename = infilename.rstrip('.trans') + '_hp_' + ('%03d' % (pixel)) + '_g'+ ('%.2lf' % (g))+'_gdot' + ('%+5.1le' % (gdot))+'_cid'
+    make_figure(outfilename,cluster=True,subs=True,limits=limits,outpath=outpath,save=save)
+
+def make_figure(filename,cluster=False,subs=True,limits=True,outpath='',save=True):
     """ This function plots the asteroids on the tangent plane viewed as if
     we are standing on the sun (heliocentric view).  It takes in the file
     produced by generate_sky_region_files and a T/F flag for clustering.
@@ -173,6 +180,7 @@ def make_figure(filename,cluster=False,subs=True,outpath=''):
     Args: filename; file produced by generate_sky_region_files.
           cluster; bool, True means color categorically by cluster id
                     False meant color by time.
+          limits; bool, T/F for including the plot limits.
           outpath; str, where you want the file to go (e.g. 'plots/arrows')
     -------
     Returns: None; plots the graph and saves the fig
@@ -188,8 +196,9 @@ def make_figure(filename,cluster=False,subs=True,outpath=''):
 
     plt.quiver(cxs, cys, mxs, mys, dts, cmap=colormap,scale=0.3, width=0.0003)
 
-    plt.xlim(-0.1, 0.1)
-    plt.ylim(-0.1, 0.1)
+    if limits:
+        plt.xlim(-0.1, 0.1)
+        plt.ylim(-0.1, 0.1)
     plt.xlabel('alpha')
     plt.ylabel('beta')
     if cluster:
@@ -200,11 +209,30 @@ def make_figure(filename,cluster=False,subs=True,outpath=''):
         outfile = filename+'.pdf'
     else:
         outfile = outpath +'.pdf'
-    plt.savefig(outfile)
+    if save:
+        plt.savefig(outfile)
+    plt.show()
     plt.close()
     plt.ion()
 
-def make_figure_sharing(filename,cluster=False,subs=True,outpath=''):
+def make_figure_sharing(filename,cluster=False,subs=True,limits=True,outpath='',save=True):
+    """ This function plots the asteroids on the tangent plane viewed as if
+    we are standing on the sun (heliocentric view).  It takes in the file
+    produced by generate_sky_region_files and a T/F flag for clustering.
+    If you pass in the T flag for clustering, make sure you give it the
+    right file.  The file that ends in '_cid' is meant for clustering, and the
+    file that has no '_cid' is meant for plotting with color in respect to
+    changing time. NOTE: This function must be the one that is used for plotting
+    the quiver with the shared tracklets displayed in a distinct color.
+    -------
+    Args: filename; file produced by generate_sky_region_files.
+          cluster; bool, True means color categorically by cluster id
+                    False meant color by time.
+          limits; bool, T/F for including the plot limits.
+          outpath; str, where you want the file to go (e.g. 'plots/arrows')
+    -------
+    Returns: None; plots the graph and saves the fig
+    """
     plt.ioff()
     mxs, cxs, mys, cys, cids =[], [], [], [], []
     smxs, scxs, smys, scys, scids =[], [], [], [], []
@@ -241,8 +269,9 @@ def make_figure_sharing(filename,cluster=False,subs=True,outpath=''):
     ax.quiver(cxs, cys, mxs, mys, cids, cmap=colormap,scale=0.3, width=0.0003)
     ax.quiver(scxs, scys, smxs, smys, color='black',scale=0.3, width=0.0003)
 
-    ax.set_xlim(-0.1, 0.1)
-    ax.set_ylim(-0.1, 0.1)
+    if limits:
+        ax.set_xlim(-0.1, 0.1)
+        ax.set_ylim(-0.1, 0.1)
     ax.set_xlabel('alpha')
     ax.set_ylabel('beta')
     if cluster:
@@ -253,26 +282,37 @@ def make_figure_sharing(filename,cluster=False,subs=True,outpath=''):
         outfile = filename+'.pdf'
     else:
         outfile = outpath +'.pdf'
-    plt.savefig(outfile)
+    if save:
+        plt.savefig(outfile)
     plt.close()
     plt.ion()
 
-def vis_cluster_arrows_err(params_dict,c_res,log=False,subdir=''):
+def vis_cluster_arrows_err(par_results,c_res,log=False,subdir='',save=True):
     """ This function plots arrows (just cluster fits).  The color is
     given by the error value (currently one of chi squared, or rms) for each
     cluster fit.  The plot is the typical quiver plot we show.  The lighter yellow
     (on viridis) represent the larger errors and the darker purple represent the
     low errors.
     ----------
-    Args: params_dict;
+    Args: par_results; dict, the result of running get_cluster_level_dicts(), a
+            dictionary keyed on cluster id and with the resulting a,adot,b,bdot,
+            g,gdot fitted orbital parameters.
+          c_res; dict, the result of running get_cluster_level_dicts(), a
+            dictionary keyed on cluster id and with the resulting error from the
+            fit of the orbit realted to that cluster.
+          log; bool, whether to plot a log transformed color scale or not
+          subdir; str, the subdirectory you want the figure to go in ex: 'plots/'
+          save; bool, save or not
+    ----------
+    Returns: None, plots and saves figure.
     """
     arrows = []
-    for v,ch in zip(params_dict.values(),c_res):
+    for k,v in par_results.items():
         # v represents the related a adot,b,bdot,g,g_dot
         if log:
-            arrows.append(list(v[:4])+[np.log(ch)])
+            arrows.append(list(v[:4])+[np.log(c_res[k])])
         else:
-            arrows.append(list(v[:4])+[ch])
+            arrows.append(list(v[:4])+[c_res[k]])
     a,adot,b,bdot,colors = np.split(np.array(arrows),5,axis=1)
 
     colormap = cm.viridis
@@ -289,13 +329,36 @@ def vis_cluster_arrows_err(params_dict,c_res,log=False,subdir=''):
         plt.title('Arrows (just cluster centers) colored by the log error value')
     else:
         plt.title('Arrows (just cluster centers) colored by the error value')
-    plt.savefig('{}cluster_arrows_color.pdf'.format(subdir))
+    if save:
+        plt.savefig('{}cluster_arrows_color.pdf'.format(subdir))
 
-def vis_cluster_tracklet_arrows(params_dict, agg_dict, idxs, t_ref, c_res, g_init=0.4, \
-                                    gdot_init=0.0,label='None',size=6,log=False,subdir=''):
+def vis_cluster_tracklet_arrows(par_results, agg_dict, t_ref, c_res, g_init=0.4, \
+                                    gdot_init=0.0,label='None',size=6,log=False,subdir='',save=True):
     """ This function plots arrows (both the cluster fits and the original tracklets).  The color is
-    given by the log transform of the chi_sq value for each cluster fit (the tracklets are all grey).
-    the label tag tells the function which labels to display. options are ['None','ggdot','id','error']
+    given by the log transform of the error value for each cluster fit (the tracklets are all grey).
+    the label tag tells the function which labels to display. Options are ['None','ggdot','id','error']
+    ----------
+    Args: par_results; dict, the result of running get_cluster_level_dicts(), a
+            dictionary keyed on cluster id and with the resulting a,adot,b,bdot,
+            g,gdot fitted orbital parameters.
+          agg_dict; dict, the result of running get_cluster_level_dicts(), a
+            dictionary keyed on cluster id with a list of the associated tracklets
+            with a tuple containing tracklet_id,a,adot,b,bdot for each tracklet in
+            the cluster as the value.
+          t_ref; float, the lunation date in question
+          c_res; dict, the result of running get_cluster_level_dicts(), a
+            dictionary keyed on cluster id and with the resulting error from the
+            fit of the orbit realted to that cluster.
+          g_init; float, the initial gamma value
+          gdot_init; float, the initial gamma dot value
+          label; str, one of ['None','ggdot','id','error'] to specify how to label
+            the plot. Defaults to 'None'
+          size; int, the size of the font in the labels.
+          log; bool, whether to color with a log transformed value or a normal value
+          subdir; str, the subdirectory you want the figure to go in ex: 'plots/'
+          save; bool, save or not
+    ----------
+    Returns: None, plots and saves figure.
     """
     valid_labels = ['None','ggdot','id','error']
     if label not in valid_labels:
@@ -306,19 +369,19 @@ def vis_cluster_tracklet_arrows(params_dict, agg_dict, idxs, t_ref, c_res, g_ini
     cluster_tracklet_level = []
 
     for k,v in agg_dict.items():
-        if k in idxs:
+        if k in par_results.keys():
             cluster_tracklet_level.append(v)
 
-    if len(params_dict)!= len(cluster_tracklet_level):
+    if len(par_results)!= len(cluster_tracklet_level):
         raise ValueError('the length of the cluster params {0} is different from the number of ids \
-                            passed for agg_dict {1}'.format(len(params_dict),len(cluster_tracklet_level)))
+                            passed for agg_dict {1}'.format(len(par_results),len(cluster_tracklet_level)))
 
-    for k,v,ch in zip(params_dict.keys(),params_dict.values(),c_res):
+    for k,v in par_results.items():
         # k represents cluster id and v represents the related a adot,b,bdot,g,g_dot
         if log:
-            arrows.append(list(v[:4])+[np.log(ch)])
+            arrows.append(list(v[:4])+[np.log(c_res[k])])
         else:
-            arrows.append(list(v[:4])+[ch])
+            arrows.append(list(v[:4])+[c_res[k]])
         g_gdots.append((k,v[4:]))
 
     cl_trk_arrows = []
@@ -337,7 +400,7 @@ def vis_cluster_tracklet_arrows(params_dict, agg_dict, idxs, t_ref, c_res, g_ini
     ax.quiver(ac,bc,adotc,bdotc, scale=0.3, width=0.0003, alpha=0.3)
 
     if label!='None':
-        for pa,pb,pad,pbd,ggd,ch in zip(a, b, adot, bdot, g_gdots, c_res):
+        for pa,pb,pad,pbd,ggd,ch in zip(a, b, adot, bdot, g_gdots, colors):
             if label=='ggdot':
                 lab = 'g: {0:.6f}, gdot: {1:.6f}'.format(ggd[1][0],ggd[1][1])
             if label=='id':
@@ -356,37 +419,51 @@ def vis_cluster_tracklet_arrows(params_dict, agg_dict, idxs, t_ref, c_res, g_ini
         plt.title('Arrows colored by the log transform of the error values. Tracklets are overlayed in light grey')
     else:
         plt.title('Arrows colored by the error values. Tracklets are overlayed in light grey')
-    if log:
-        plt.savefig('{0}cluster_tracklet_arrows_label_{1}_log.pdf'.format(subdir,label))
-    else:
-        plt.savefig('{0}cluster_tracklet_arrows_label_{1}.pdf'.format(subdir,label))
-    # return g_gdots
+    if save:
+        if log:
+            plt.savefig('{0}cluster_tracklet_arrows_label_{1}_log.pdf'.format(subdir,label))
+        else:
+            plt.savefig('{0}cluster_tracklet_arrows_label_{1}.pdf'.format(subdir,label))
 
-def vis_cluster_tracklet_diff(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gdot_init=0.0,subdir=''):
-    """ This function displays and saves a quiver plot with the arrows form our
-    fitted clusters (passed in params_dict), and our original measures passed in
-    agg_dict (only the entries with the realted cluster id's passed in idxs).
-    ============
-    The plot is colored by the category of the arrow (cluster fits are dark,
-    transformed clusters, with the g and gdot from the cluster fit are inbetween,
+
+def vis_cluster_tracklet_diff(par_results, agg_dict, t_ref, g_init=0.4, gdot_init=0.0,subdir='',save=True):
+    """ This function displays and saves a quiver plot with the arrows from our
+    fitted clusters (passed in par_results), and our original measures passed in
+    agg_dict.  The plot is colored by the category of the arrow (cluster fits are dark,
+    transformed clusters, with the g and gdot from the cluster fit are in between,
     and the original tracklet fits are light blue.)
+    ------------
+    Args: par_results; dict, the result of running get_cluster_level_dicts(), a
+            dictionary keyed on cluster id and with the resulting a,adot,b,bdot,
+            g,gdot fitted orbital parameters.
+          agg_dict; dict, the result of running get_cluster_level_dicts(), a
+            dictionary keyed on cluster id with a list of the associated tracklets
+            with a tuple containing tracklet_id,a,adot,b,bdot for each tracklet in
+            the cluster as the value.
+          t_ref; float, the lunation date in question
+          g_init; float, the initial gamma value
+          gdot_init; float, the initial gamma dot value
+          subdir; str, the subdirectory you want the figure to go in ex: 'plots/'
+          save; bool, save or not
+    ----------
+    Returns: None, plots and saves figure.
     """
     a,adot,b,bdot,colors = [],[],[],[],[]
     arrows = []
     cluster_tracklet_level = []
 
     for k,v in agg_dict.items():
-        if k in idxs:
+        if k in par_results.keys():
             cluster_tracklet_level.append(v)
 
-    if len(params_dict)!= len(cluster_tracklet_level):
+    if len(par_results)!= len(cluster_tracklet_level):
         raise ValueError('the length of the cluster params {0} is different from the number of ids \
-                            passed for agg_dict {1}'.format(len(params_dict),len(cluster_tracklet_level)))
-    for k,v in params_dict.items():
+                            passed for agg_dict {1}'.format(len(par_results),len(cluster_tracklet_level)))
+    for k,v in par_results.items():
         # k represents cluster id and v represents the related a adot,b,bdot,g,g_dot
         arrows.append(list(v[:4])+[1000])
 
-    for clust_trkls,cparams in zip(cluster_tracklet_level,params_dict.values()):
+    for clust_trkls,cparams in zip(cluster_tracklet_level,par_results.values()):
         g_cl,gdot_cl = cparams[-2:]
         for trkl in clust_trkls:
             obs_in_trkl = [i[1:] for i in trkl]
@@ -410,7 +487,8 @@ def vis_cluster_tracklet_diff(params_dict, agg_dict, idxs, t_ref, g_init=0.4, gd
     plt.xlabel('alpha')
     plt.ylabel('beta')
     plt.title('Arrows with orbit fit. Darker colors represent fitted clusters, and lighter clusters represent individual tracklets.')
-    plt.savefig('{}cluster_tracklet_diff.pdf'.format(subdir))
+    if save:
+        plt.savefig('{}cluster_tracklet_diff.pdf'.format(subdir))
 
 def orbitalElements2Cartesian(a, e, I, peri, node, E):
     """ Convert orbital elements to Cartesian coordinates in the Solar System.
@@ -421,6 +499,9 @@ def orbitalElements2Cartesian(a, e, I, peri, node, E):
         peri (float): longitude of perihelion (radians)
         node (float): longitude of ascending node (radians)
         E (float): eccentric anomaly (radians)
+    --------
+    Returns:
+        x,y,z: cartesian positions
     """
     # Check if the orbit is parabolic or hyperbolic
     if e >=1:
@@ -439,7 +520,7 @@ def orbitalElements2Cartesian(a, e, I, peri, node, E):
 
     return x, y, z
 
-def vis_orbits(orb_elements,limits=True,sun=True,alpha=0.1,c='blue',figsize=(6,6)):
+def vis_orbits(orb_elements,limits=True,sun=True,alpha=0.1,c='blue',figsize=(6,6),save=False):
     """ This function is for visualization of orbits fit by our fitting function,
     and it is set up to use "orbital elements" as input. The orbital elements are
     a (semi-major axis), e (eccentricity), i (inclination), w (argument of perigee)
@@ -477,7 +558,6 @@ def vis_orbits(orb_elements,limits=True,sun=True,alpha=0.1,c='blue',figsize=(6,6
         x, y, z = orbitalElements2Cartesian(a, e, I, peri, node, E)
 
         # Plot orbits
-        # c='#32CD32'
         ax.plot(x, y, z, c=c,alpha=alpha)
 
     # Add limits (in AU)
@@ -491,4 +571,6 @@ def vis_orbits(orb_elements,limits=True,sun=True,alpha=0.1,c='blue',figsize=(6,6
     ax.set_ylabel('y')
     ax.set_zlabel('z')
     plt.tight_layout()
+    if save:
+        plt.savefig('orbit_plot.png')
     plt.show()

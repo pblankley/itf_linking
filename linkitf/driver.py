@@ -25,25 +25,7 @@ from itf_clean import clean_itf_data_mpc, clean_training_data_mpc
 import os
 import sys
 
-# Define file paths
-mpcpath_train = 'data/train/UnnObs_Training_1_line_A_ec.mpc'
-txtpath = 'data/itf/itf_new_1_line.txt'
-mpcpath = 'data/itf/itf_new_1_line_ec.mpc'
-
-############################################################################
-
-# Do not mess with the below unless you know what you are doing.
-
-# Get abs paths
-mpc_path = os.path.abspath(mpcpath)
-mpc_path_train = os.path.abspath(mpcpath_train)
-txt_path = os.path.abspath(txtpath)
-
-# Clean the training data (one-time run)
-# clean_training_data_mpc(mpc_path_train)
-
-# Clean the itf data (one-time run)
-# clean_itf_data_mpc(mpc_path)
+######################### FUNCTION DEFINITIONS ##################################
 
 # Put the runs in function so they do not automatically execute
 def run_itf(path_to_itf,pixels,g_gdots,dt,cr):
@@ -253,33 +235,65 @@ def cluster_month_over_month_train(path_to_train,rad):
 
 ##########################################################################
 
+""" Below you can first define the correct paths and vairables you would like
+to use.  Since each call of the functions below (listed under their correct headers)
+are quite time intensive, we have commented them out.  When you want to run one or
+more of the sections of the driver, just uncomment the line realted to what you want
+to run, and run the file.
+"""
+if __name__=='__main__':
+    # Define the variables to use
+    gs = [0.4]
+    gdots = [-0.004, -0.002, 0.0, 0.002, 0.004]
+    g_gdots = [(x,y) for x in gs for y in gdots]
+    nside=8
+    dt=15.0
+    cr=0.00124
+    meta_rad=.05
+    pixels = range(hp.nside2npix(nside))
+    mpcpath_train = 'data/train/UnnObs_Training_1_line_A_ec.mpc'
+    txtpath = 'data/itf/itf_new_1_line.txt'
+    mpcpath = 'data/itf/itf_new_1_line_ec.mpc'
 
-# Define the variables to use
-gs = [0.4]
-gdots = [-0.004, -0.002, 0.0, 0.002, 0.004]
-g_gdots = [(x,y) for x in gs for y in gdots]
-nside=8
-dt=15.0
-cr=0.00124
-meta_rad=????
-pixels = range(hp.nside2npix(nside))
+    # Get abs paths
+    mpc_path = os.path.abspath(mpcpath)
+    mpc_path_train = os.path.abspath(mpcpath_train)
+    txt_path = os.path.abspath(txtpath)
 
-# Run the training file (saves pickles)
-# run_train(mpc_path_train,pixels,g_gdots,dt,cr)
-# Cluster the clusters (saves pickles)
-# cluster_clusters_train(mpc_path_train,pixels,nside,dt,cr,new_rad=cr)
-# Postprocessing (saves pickles)
-# postprocessing_train(mpc_path_train,pixels,nside)
-# Cluster month over month
-cluster_month_over_month_train(mpc_path_train,rad=meta_rad)
+    ###################### CLEANING SECTION ############################
+    # Clean the training data (one-time run)
+    # clean_training_data_mpc(mpc_path_train)
+
+    # Clean the itf data (one-time run)
+    # clean_itf_data_mpc(mpc_path)
 
 
+    ###################### TRAINING SECTION ############################
+    # Run the training file (saves pickles)
+    # run_train(mpc_path_train,pixels,g_gdots,dt,cr)
 
-# Run the itf  (saves pickles)
-# run_itf(mpc_path,pixels,g_gdots,dt,cr)
-# Cluster the clusters  (saves pickles)
-# cluster_clusters_itf(mpc_path,pixels,nside,dt,cr,new_rad=cr)
-# Postprocessing  (saves pickles)
-# postprocessing_train(mpc_path,pixels,nside)
-# Meta clustering month over month
-# cluster_month_over_month_train(mpc_path,rad=meta_rad)
+    # Cluster the clusters (saves pickles)
+    # cluster_clusters_train(mpc_path_train,pixels,nside,dt,cr,new_rad=cr)
+
+    # Postprocessing (saves pickles)
+    # postprocessing_train(mpc_path_train,pixels,nside)
+
+    # Cluster month over month
+    # cluster_month_over_month_train(mpc_path_train,rad=meta_rad)
+
+
+    ####################### ITF SECTION ###############################
+    # Run the itf  (saves pickles)
+    # run_itf(mpc_path,pixels,g_gdots,dt,cr)
+
+    # Cluster the clusters  (saves pickles)
+    cluster_clusters_itf(mpc_path,pixels,nside,dt,cr,new_rad=cr)
+
+    # Postprocessing  (saves pickles)
+    # postprocessing_train(mpc_path,pixels,nside)
+
+    # Meta clustering month over month
+    # cluster_month_over_month_train(mpc_path,rad=meta_rad)
+
+
+    ############################## END #####################################

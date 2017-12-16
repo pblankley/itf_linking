@@ -15,15 +15,14 @@ Ryan can do 5 and 6  (with the pickled results that is), he will not be able to 
 
 
 1. get orbital elements transform the right reference vector in the pixels DONE (postprocessing)
-1.2 try to fix the fit_extend method and incorporate it, or save it for later. SOON
-1.3 build off the cluster of clusters method if fit_extend is not better. DONE
-2. once 1 is done we will have orbital elements for each cluster in a given month (.trans file) NEXT
-3. pickle the results for later comparison. 
-4. get several .trans files and run them all.
-5. unpickle the results of those runs and cluster.
-6. display some sexy plots with our resulting orbits.  
-7. sleep
+1.2 try to fix the fit_extend method and incorporate it, or save it for later. DONE (save for later)
+1.3 build off the cluster of clusters method if fit_extend is not better. DONE (_coc.pickle)
+2. once 1 is done we will have orbital elements for each cluster in a given month (.trans) in _orbelem.pickle
+3. pickle the results for later comparison. DONE
+4. get several .trans files and run them all. DONE (for training)
+5. unpickle the results of those runs and cluster. (DONE the cluster_months() method)
 
+Clustered on just the first five time ind values
 
 FOR THE TIME CONVERSION MONTH TO MONTH:
 
@@ -35,4 +34,30 @@ when n = sqrt(GMSun / a^3)
 when a is the semi-major axis (the first orbital element parameter)
 
 Happy month to month asteroid hunting!
- 
+
+Now that month to month is done, and we have training results. We need to validate clusters.
+
+
+FINAL TODO:
+1. Test different methods of cluster allocation DONE 
+2. validate our approach to cluster allocation, and get final results for training. DONE
+3. display some sexy plots with our resulting orbits. DONE 
+4. dont forget orbit fitting errors plots and meta cluster plots (and % correct plots) done
+
+
+Writing TODO
+paragraph on alloc methodology and quantifying results. DONE 
+paragraph on orbital elements and our transform. DONE
+
+thoughts on paper:
+move figure 9 lower so it flows more naturally 
+98.9% instead of 98.2%
+we cant say there is a 1-1 correspendence between the clusters we make and the true clusters
+is there a way to get latex fonts on the "Full Asteroid Identification Sequence" graph?
+talk with Ryan about where to go with the demo.py file. 
+
+
+
+
+
+ASIDE: how about svm for determining the best seperaing line between those two distributions?

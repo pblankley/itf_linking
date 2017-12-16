@@ -13,7 +13,7 @@ from clustering import find_clusters, generate_sky_region_files, accessible_clus
 from clustering import train_clusters, test_clusters
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
+# TODO redo demo.
 # Global parameters
 gs = [0.4]
 gdots = [-0.004, -0.002, 0.0, 0.002, 0.004]

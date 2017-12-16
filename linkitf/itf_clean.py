@@ -24,7 +24,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def clean_itf_data_mpc(path):
     """ Function to use to clean the itf when it is in elliptical mpc format.
-    If that means nothing to you, use the clean_itf_data function from text. """
+    If that means nothing to you, use the clean_itf_data function from text.
+    This function will take the path to the elliptical coordinate .mpc file
+    and build the supporting files it needs in the same directory.
+    --------
+    Args: location of the .mpc elliptical cooridnate ITF file.
+    --------
+    Returns: None, and saves files.
+    """
     mpc_path = os.path.abspath(path)
     tracklets, tracklets_jd_dict, sortedTracklets = cl.get_sorted_tracklets(mpc_path)
     cl.separate_time_windows(tracklets, sortedTracklets, tracklets_jd_dict, \
@@ -33,7 +40,14 @@ def clean_itf_data_mpc(path):
         cl.index_positions(n, lambda t: 2.5, file_stem=mpc_path, dt=15.)
 
 def clean_itf_data(path):
-    """ Function to use to clean the itf data in raw text format"""
+    """ Function to use to clean the itf data in raw text format. This function
+    will take the path to the raw .txt ITF file and build the supporting
+    files it needs in the same directory, along with a large elliptical .mpc file.
+    ---------
+    Args: location of the .txt ITF file.
+    --------
+    Returns: None, and saves files.
+    """
     itf_path = os.path.abspath(path)
     home_dir = os.path.dirname(itf_path)
 
@@ -53,7 +67,14 @@ def clean_itf_data(path):
 
 
 def _txt_to_mpc_after_split(full_path,home_dir):
-    """ helper function for above clean itf data """
+    """ This is a helper function for above clean itf data.  This function makes
+    the large .mpc elliptical coordinate file if it is not already given.
+    --------
+    Args: full_path; str, path to ITF .txt file
+          home_dir; str, path to the home directory.
+    --------
+    Returns: None, saves large .mpc file.
+    """
     Observatories = MPC_library.Observatories
 
     with open(os.path.join(home_dir,'itf_new_1_line_ec.mpc'), 'w') as outfile:
@@ -82,7 +103,15 @@ def _txt_to_mpc_after_split(full_path,home_dir):
                 outfile.write(outstring)
 
 def clean_training_data_mpc(path):
-    """ Clean the training data if it is already in the elliptical mpc format"""
+    """ Function to use to clean the training data when it is in elliptical mpc
+    format. If that means nothing to you, use the clean_training_data function
+    from text. This function will take the path to the elliptical coordinate .mpc file
+    and build the supporting files it needs in the same directory.
+    --------
+    Args: location of the .mpc elliptical cooridnate training data file.
+    --------
+    Returns: None, and saves files.
+    """
     mpc_path = os.path.abspath(path)
     UnnObs_tracklets, UnnObs_tracklets_jd_dict, UnnObs_sortedTracklets = cl.get_sorted_tracklets(mpc_path)
 
@@ -92,9 +121,16 @@ def clean_training_data_mpc(path):
     for n in range(-825,14):
         cl.index_positions(n, lambda t: 2.5, file_stem=mpc_path, dt=15.)
 
-        
+
 def clean_training_data(path):
-    """ Clean the training data from its original text format. """
+    """ Function to use to clean the training data in raw text format. This function
+    will take the path to the raw .txt training file and build the supporting
+    files it needs in the same directory, along with a large elliptical .mpc file.
+    ---------
+    Args: location of the .txt training file.
+    --------
+    Returns: None, and saves files.
+    """
     train_path = os.path.abspath(path)
     home_dir = os.path.dirname(train_path)
 
@@ -120,7 +156,14 @@ def clean_training_data(path):
 
 
 def  _txt_to_mpc_after_split(full_path, home_dir):
-    """ Helper function for the above clean_training_data"""
+    """ This is a helper function for above clean training data.  This function
+    makes the large .mpc elliptical coordinate file if it is not already given.
+    --------
+    Args: full_path; str, path to training .txt file
+          home_dir; str, path to the home directory.
+    --------
+    Returns: None, saves large .mpc file.
+    """
     Observatories = MPC_library.Observatories
 
     with open(os.join.path(home_dir,'UnnObs_Training_1_line_A_ec.mpc'), 'w') as outfile:
@@ -143,7 +186,6 @@ def  _txt_to_mpc_after_split(full_path, home_dir):
                     mag = '----'
                 xh, yh, zh = Observatories.getObservatoryPosition(obsCode, jd_utc)
                 xhec, yhec, zhec = util.equatorial_to_ecliptic(np.array((xh, yh, zh)))
-                #outstring = "%11s %s %4s %5s %s %13.6lf %12.7lf %12.7lf %12.7lf %12.7lf %12.7lf %12.7lf %12.7lf %12.7lf %12.7lf %12.7lf %12.7lf %12.7lf\n"% \
                 #      (provDesig, dateObs, obsCode, mag, filt, jd_tdb, x, y, z, xh, yh, zh, xec, yec, zec, xhec, yhec, zhec)
                 outstring = "%11s %s %4s %5s %s %13.6lf %12.7lf %12.7lf %12.7lf %12.7lf %12.7lf %12.7lf\n"% \
                     (provDesig, dateObs, obsCode, mag, filt, jd_tdb, xec, yec, zec, xhec, yhec, zhec)
