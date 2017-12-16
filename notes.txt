@@ -50,13 +50,13 @@ paragraph on alloc methodology and quantifying results. DONE
 paragraph on orbital elements and our transform. DONE
 
 thoughts on paper:
-move figure 9 lower so it flows more naturally 
-98.9% instead of 98.2%
-we cant say there is a 1-1 correspendence between the clusters we make and the true clusters
-is there a way to get latex fonts on the "Full Asteroid Identification Sequence" graph?
-talk with Ryan about where to go with the demo.py file. 
+move figure 9 lower so it flows more naturally RYAN
+98.9% instead of 98.2% RYAN
+we cant say there is a 1-1 correspendence between the clusters we make and the true clusters GOT IT
+is there a way to get latex fonts on the "Full Asteroid Identification Sequence" graph? GOOGLE
+talk with Ryan about where to go with the demo.py file. move to misc
 
-
+Paul do the ---- coverage --- DONE-
 
 
 
