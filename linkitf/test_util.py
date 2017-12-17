@@ -1,7 +1,6 @@
 import numpy as np
 from libr import MPC_library
 import util
-import numpy as np
 
 
 def test_lunation():
