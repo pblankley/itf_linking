@@ -235,13 +235,30 @@ def cluster_month_over_month_train(path_to_train,rad):
 
 ##########################################################################
 
-""" Below you can first define the correct paths and vairables you would like
-to use.  Since each call of the functions below (listed under their correct headers)
+"""
+****************************** INSTRUCTIONS ***************************
+Below you can first define the correct paths and vairables you would like
+to use.  If you want to replicate our results, stick with the defaults below.
+
+Since each call of the functions below (listed under their correct headers)
 are quite time intensive, we have commented them out.  When you want to run one or
 more of the sections of the driver, just uncomment the line realted to what you want
 to run, and run the file.
+
+If you are starting with nothing but the main file, enter the path below for either
+training or ITF or both. Then if you are running just the training file, uncomment
+each line in TRAINING SECTION that is commented out under its descriptive header.
+If you are running just the ITF file, uncomment each line in ITF SECTION that
+is commented out under its descriptive header.  If you are running both files,
+uncomment every line in both the TRAINING and ITF sections.
 """
 if __name__=='__main__':
+
+    ########################### USER INPUT #############################
+    mpcpath_train = 'data/train/UnnObs_Training_1_line_A_ec.mpc'
+    mpcpath_itf = 'data/itf/itf_new_1_line_ec.mpc'
+    ####################################################################
+
     # Define the variables to use
     gs = [0.4]
     gdots = [-0.004, -0.002, 0.0, 0.002, 0.004]
@@ -251,48 +268,44 @@ if __name__=='__main__':
     cr=0.00124
     meta_rad=.05
     pixels = range(hp.nside2npix(nside))
-    mpcpath_train = 'data/train/UnnObs_Training_1_line_A_ec.mpc'
-    txtpath = 'data/itf/itf_new_1_line.txt'
-    mpcpath = 'data/itf/itf_new_1_line_ec.mpc'
+    # txtpath = 'data/itf/itf_new_1_line.txt'
 
     # Get abs paths
-    mpc_path = os.path.abspath(mpcpath)
+    mpc_path = os.path.abspath(mpcpath_itf)
     mpc_path_train = os.path.abspath(mpcpath_train)
-    txt_path = os.path.abspath(txtpath)
-
-    ###################### CLEANING SECTION ############################
-    # Clean the training data (one-time run)
-    # clean_training_data_mpc(mpc_path_train)
-
-    # Clean the itf data (one-time run)
-    # clean_itf_data_mpc(mpc_path)
-
+    # txt_path = os.path.abspath(txtpath)
 
     ###################### TRAINING SECTION ############################
-    # Run the training file (saves pickles)
+    """Clean the training data (one-time run)"""
+    # clean_training_data_mpc(mpc_path_train)
+
+    """Run the training file (saves pickles)"""
     # run_train(mpc_path_train,pixels,g_gdots,dt,cr)
 
-    # Cluster the clusters (saves pickles)
+    """Cluster the clusters (saves pickles)"""
     # cluster_clusters_train(mpc_path_train,pixels,nside,dt,cr,new_rad=cr)
 
-    # Postprocessing (saves pickles)
+    """Postprocessing (saves pickles)"""
     # postprocessing_train(mpc_path_train,pixels,nside)
 
-    # Cluster month over month
+    """Cluster month over month (saves pickles)"""
     # cluster_month_over_month_train(mpc_path_train,rad=meta_rad)
 
 
     ####################### ITF SECTION ###############################
-    # Run the itf  (saves pickles)
+    """Clean the itf data (one-time run)"""
+    # clean_itf_data_mpc(mpc_path)
+
+    """Run the itf  (saves pickles)"""
     # run_itf(mpc_path,pixels,g_gdots,dt,cr)
 
-    # Cluster the clusters  (saves pickles)
-    cluster_clusters_itf(mpc_path,pixels,nside,dt,cr,new_rad=cr)
+    """Cluster the clusters  (saves pickles)"""
+    # cluster_clusters_itf(mpc_path,pixels,nside,dt,cr,new_rad=cr)
 
-    # Postprocessing  (saves pickles)
+    """Postprocessing  (saves pickles)"""
     # postprocessing_train(mpc_path,pixels,nside)
 
-    # Meta clustering month over month
+    """Meta clustering month over month"""
     # cluster_month_over_month_train(mpc_path,rad=meta_rad)
 
 

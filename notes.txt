@@ -57,7 +57,21 @@ is there a way to get latex fonts on the "Full Asteroid Identification Sequence"
 talk with Ryan about where to go with the demo.py file. move to misc
 
 Paul do the ---- coverage --- DONE-
-
-
-
 ASIDE: how about svm for determining the best seperaing line between those two distributions?
+
+final pass on paper:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

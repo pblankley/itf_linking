@@ -161,9 +161,25 @@ def _get_vals_for_plot(filename,cluster,subs):
             dts.append(float(dt))
     return mxs, cxs, mys, cys, dts
 
-# TODO docs
 def cluster_by_color(infilename,pixel,nside,n,angDeg=5.5, g=0.4, gdot=0.0, cluster_id_dict={},limits=True,outpath='',save=True):
-    """ docs"""
+    """ This function is a easier, user facing interface for both the file
+    generation and the plot based on the file generated. Bases off make_figure()
+    --------
+    Args: infilename; str, the name of the .trans file that you want to genreate files for.
+          pixel; int, the healpix section the user wants.
+          nside; int, number of sides in the healpix division of the sky
+          n; int, the lunar center. use the function in utils to get the jd
+          angDeg; float, the angle is degrees
+          g; float; the gamma value (distance from observer to the asteroid)
+          gdot; float; the gamma dot value of radial velocity.
+          cluster_id_dict; dict, the cluster_id_dict output from find clusters,
+                     used strictly for plotting.
+          limits; bool; whether to include limits on the arrow plot or not
+          outpath; str, where you want the file to go (e.g. 'plots/arrows')
+          save; bool, whether to save the file or not
+    --------
+    Returns: None, plots and potentially saves the figure
+    """
     generate_sky_region_files(infilename, [pixel], nside, n, angDeg, g, gdot, cluster_id_dict)
     outfilename = infilename.rstrip('.trans') + '_hp_' + ('%03d' % (pixel)) + '_g'+ ('%.2lf' % (g))+'_gdot' + ('%+5.1le' % (gdot))+'_cid'
     make_figure(outfilename,cluster=True,subs=True,limits=limits,outpath=outpath,save=save)
@@ -182,6 +198,7 @@ def make_figure(filename,cluster=False,subs=True,limits=True,outpath='',save=Tru
                     False meant color by time.
           limits; bool, T/F for including the plot limits.
           outpath; str, where you want the file to go (e.g. 'plots/arrows')
+          save; bool, whether to save the file or not
     -------
     Returns: None; plots the graph and saves the fig
     """
@@ -230,6 +247,7 @@ def make_figure_sharing(filename,cluster=False,subs=True,limits=True,outpath='',
                     False meant color by time.
           limits; bool, T/F for including the plot limits.
           outpath; str, where you want the file to go (e.g. 'plots/arrows')
+          save; bool, whether to save the file or not
     -------
     Returns: None; plots the graph and saves the fig
     """
