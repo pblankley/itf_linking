@@ -73,11 +73,13 @@ def cluster_clusters_itf(path_to_itf,pixels,nside,dt,cr,new_rad):
             with open(os.path.join(home_dir,'itf_result_{}_initial.pickle'.format(str(util.lunation_center(n)))),'rb') as handle:
                 clust_counter = pickle.load(handle)
 
+
             coc_counter, coc_ids = cluster_clusters(itf_file, clust_counter, pixels, nside, n, dt=dt, rad=cr, \
-                                                                            new_rad=new_rad, gi=0.4, gdoti=0.0)
+                                                                            new_rad=new_rad, gi=0.4, gdoti=0.0, maxiter=200)
 
             with open(os.path.join(home_dir,'itf_result_{}_coc.pickle'.format(str(util.lunation_center(n)))),'wb') as handle:
                 pickle.dump(coc_counter, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
 
     sys.stdout.write("\r%d%%" % 100)
     print('\n')
@@ -123,14 +125,28 @@ def cluster_month_over_month_itf(path_to_itf,rad):
             fit_dicts.append(fit_dict)
 
     print('Data loaded...')
-    final_dict, final_dict_cid = cluster_months(fit_dicts,rad=rad)
+    final_dict = cluster_months(fit_dicts,rad=rad)
 
     with open(os.path.join(home_dir,'itf_final_results.pickle'),'wb') as handle:
         pickle.dump(final_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    with open(os.path.join(home_dir,'itf_final_results_cid.pickle'),'wb') as handle:
-        pickle.dump(final_dict_cid, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     print('Run finished!')
+
+def allocate_results(path_to_itf):
+    home_dir = os.path.dirname(path_to_itf)
+    with open(os.path.join(home_dir,'itf_final_results.pickle'),'rb') as handle:
+        final_dict = pickle.load(handle)
+
+    print('Data loaded...')
+    allocated_dict, alloc_fits = util.allocate(final_dict,method='fit',details=True)
+
+    with open (os.path.join(home_dir,'itf_final_results_alloc.pickle'),'wb') as handle:
+        pickle.dump(allocated_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    with open (os.path.join(home_dir,'itf_final_results_alloc_fits.pickle'),'wb') as handle:
+        pickle.dump(alloc_fits, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    print('Run Finished!')
 
 ###############################################################################
 
@@ -303,10 +319,11 @@ if __name__=='__main__':
     # cluster_clusters_itf(mpc_path,pixels,nside,dt,cr,new_rad=cr)
 
     """Postprocessing  (saves pickles)"""
-    # postprocessing_train(mpc_path,pixels,nside)
+    # postprocessing_itf(mpc_path,pixels,nside)
 
     """Meta clustering month over month"""
-    # cluster_month_over_month_train(mpc_path,rad=meta_rad)
+    # cluster_month_over_month_itf(mpc_path,rad=meta_rad)
 
-
+    """ Allocate the resulting month over month clusters to tracklet id's """
+    # allocate_results(mpc_path)
     ############################## END #####################################

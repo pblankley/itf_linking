@@ -18,6 +18,7 @@ from collections import defaultdict
 from collections import Counter
 from libr import MPC_library
 import scipy.spatial
+from sklearn.neighbors import BallTree
 import pickle
 from operator import add
 import matplotlib.cm as cm
@@ -26,7 +27,7 @@ import matplotlib.colors as mlc
 import matplotlib.cm as cm
 import util
 from copy import copy
-
+import gc
 
 Observatories = MPC_library.Observatories
 
@@ -101,7 +102,7 @@ def error(opt_result,args,flag='chi'):
     return err/len(err_arr),err_arr
 
 def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM=MPC_library.Constants.GMsun,
-                    tol=None, use_jacobian=True, method='BFGS', details=False):
+                    tol=None, use_jacobian=True,maxiter=None, method='BFGS', details=False):
     """ This function needs to take in all the observations over the cluster of
     tracklets (min of 3 tracklets), and return the a,adot,b,bdot,g and gdot.
 
@@ -255,6 +256,8 @@ def full_fit_t_loss(t_ref, g_init, gdot_init,  list_of_tracklets, flag='rms', GM
         return H_overall
 
     min_options = {}
+    if maxiter:
+        min_options['maxiter'] = maxiter
     if tol==0: #additional options for specific solvers to ensure max accuracy
         if method=='CG':
             min_options['gtol'] = 0
@@ -313,31 +316,33 @@ def cluster_months(fit_dicts, rad, GM=MPC_library.Constants.GMsun):
           We are not doing this transformation because it only has to do with the
           position of the asteroid, not the orbit itself.
     """
-    final_dict,indiv_orbs = {},{}
-    points,labels = [],[]
+    final_dict = {}
+    points,labels, means = [],[],[]
     for fit_dict in fit_dicts:
         for clust, orb in fit_dict.items():
             # a, e, i, bo, lo, m = orb[0]
-            labels.append((clust,np.mean(orb[1])))
+            labels.append(clust)
+            means.append(np.mean(orb[1]))
             points.append(orb[0][:5])
+    points = np.array(points)
+    means = np.array(means)
 
-    tree = scipy.spatial.cKDTree(np.array(points))
-    matches = tree.query_ball_tree(tree, rad)
+    tree = BallTree(points)
+    matches = tree.query_radius(points,r=rad)
+    gc.collect()
 
     for i,match in enumerate(matches):
-        if len(match)>0:
-            cluster_list =[]
-            orb_params,orb_errors = [points[i]],[labels[i][1]]
-            for idx in match:
-                tracklet_ids = labels[idx][0].split('|')
-                cluster_list.extend(tracklet_ids)
-                orb_params.append(points[idx])
-                orb_errors.append(labels[idx][1])
-            cluster_key='|'.join(sorted(cluster_list))
-            final_dict[cluster_key] = (np.array(orb_params).mean(axis=0), np.mean(orb_errors))
+        cluster_list = labels[i].split('|')
+        orb_params,orb_errors = [points[i]],[means[i]]
+        for idx in match:
+            tracklet_ids = labels[idx].split('|')
+            cluster_list.extend(tracklet_ids)
+            orb_params.append(points[idx])
+            orb_errors.append(means[idx])
+        cluster_key='|'.join(sorted(set(cluster_list)))
+        final_dict[cluster_key] = (np.array(orb_params).mean(axis=0), np.mean(orb_errors))
 
-    return final_dict, get_cid_dict(final_dict, shared=False)
-
+    return final_dict
 
 def postprocessing(infilename, clust_counter, pixels, nside, n, orb_elms=True, angDeg=5.5, gi=0.4, gdoti=0.0):
     """ This function will take in a cluster counter and find the right tracklets
@@ -364,19 +369,7 @@ def postprocessing(infilename, clust_counter, pixels, nside, n, orb_elms=True, a
                 EITHER the related, fitted a,adot,b,bdot,g,gdot parameters for that
                 cluster OR the realted, transformed a, e, i, big_omega, little_omega, m
                 from the orbital elements transform, and array of observation level errors.
-     """
-    cid_dict = {} #get_cid_dict(clust_counter, shared=False)
-    helper = {}
-    for str_cid in clust_counter.keys():
-        for tid in str_cid.split('|'):
-            if tid in cid_dict.keys() and helper[tid]<len(str_cid.split('|')):
-                cid_dict[tid] = str_cid
-                helper[tid] = len(str_cid.split('|'))
-            else:
-                cid_dict[tid] = str_cid
-                helper[tid] = len(str_cid.split('|'))
-    # cid_dict now has tracklet id as key and joined cluster id as value
-
+    """
     res_dicts = get_res_dict(infilename, pixels, nside, n, angDeg=angDeg, g=gi, gdot=gdoti)
     t_ref = util.lunation_center(n)
     fit_dict= {}
@@ -384,19 +377,20 @@ def postprocessing(infilename, clust_counter, pixels, nside, n, orb_elms=True, a
     # For each chunk of sky in our window
     for pix, results_d in res_dicts.items():
 
-        # referencd vector for transform
+        # Referenced vector for transform
         r_ref = hp.pix2vec(nside, pix, nest=True)
 
         agg_dict = defaultdict(list)
-        for tid, v in cid_dict.items():
-            if results_d[tid]!=[]:
-                agg_dict[v].append([tuple([tid]+list(obs)) for obs in results_d[tid]])
+        for v in clust_counter.keys():
+            for tid in v.split('|'):
+                if results_d[tid]!=[]:
+                    agg_dict[v].append([tuple([tid]+list(obs)) for obs in results_d[tid]])
 
         # k is the str cluster id, v is the tracklets in the cluster id
         for k, v in agg_dict.items():
             params, func_val, chisq, chiarr = full_fit_t_loss(t_ref, gi, gdoti, v)
 
-            # perform transform from pbasis to orbital elements
+            # Preform transform from pbasis to orbital elements
             if orb_elms:
                 params = util.pbasis_to_elements(params, r_ref)
 
@@ -409,7 +403,7 @@ def postprocessing(infilename, clust_counter, pixels, nside, n, orb_elms=True, a
     return fit_dict
 
 
-def cluster_clusters(infilename, clust_count, pixels, nside, n, dt=15., rad=0.00124, new_rad=0.00124, angDeg=5.5, gi=0.4, gdoti=0.0):
+def cluster_clusters(infilename, clust_count, pixels, nside, n, dt=15., rad=0.00124, new_rad=0.00124, angDeg=5.5, gi=0.4, gdoti=0.0, maxiter=None):
     """ This function takes in a previous run of find_clusters() in the form of a cluster_counter
     object.  It will fit orbits to each cluster in the group and compare the resulting
     a,adot,b,bdot,g,gdot (yes, all 6 parameters) with a KDTree and choose the clusters that
@@ -448,8 +442,7 @@ def cluster_clusters(infilename, clust_count, pixels, nside, n, dt=15., rad=0.00
 
         points, labels = [], []
 
-        fit_dict = _nlin_fits(clust_count, results_d, gi, gdoti, t_ref)
-        # print(len(clust_count.keys()), len(fit_dict.keys()))
+        fit_dict = _nlin_fits(clust_count, results_d, gi, gdoti, t_ref, maxiter=maxiter)
         for k,v in fit_dict.items():
             points.append(v[0])
             labels.append(k)
@@ -465,7 +458,7 @@ def cluster_clusters(infilename, clust_count, pixels, nside, n, dt=15., rad=0.00
             for idx in match:
                 c_id = labels[idx]
                 cluster_list.extend(c_id.split('|'))
-            cluster_key='|'.join(sorted(cluster_list))
+            cluster_key='|'.join(sorted(set(cluster_list)))
             cluster_counter.update({cluster_key: 1})
 
     return cluster_counter, get_cid_dict(cluster_counter,shared=False)
@@ -648,7 +641,7 @@ def fit_extend(infilename, clust_count, pixels, nside, n, dt=15., rad=0.00124, n
 
     return cluster_counter, get_cid_dict(cluster_counter,shared=False)
 
-def _nlin_fits(clust_count, results_d, g_init, gdot_init, t_ref):
+def _nlin_fits(clust_count, results_d, g_init, gdot_init, t_ref, maxiter=None):
     """ This is a helper function for the fit_extend function.
     It calculates the fitted parameters for each cluster it is given in
     agg_dict, and returns a dictionary with cluster_id as the key and the realted
@@ -680,7 +673,7 @@ def _nlin_fits(clust_count, results_d, g_init, gdot_init, t_ref):
     fit_dict= {}
     # k is the str cluster id, v is the tracklets in the cluster id
     for k, v in agg_dict.items():
-        params, func_val, chisq, chiarr = full_fit_t_loss(t_ref, g_init, gdot_init, v)
+        params, func_val, chisq, chiarr = full_fit_t_loss(t_ref, g_init, gdot_init, v, maxiter=maxiter)
         fit_dict[k] = (params, func_val, chisq, chiarr)
 
     return fit_dict
